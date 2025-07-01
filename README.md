@@ -21,7 +21,7 @@ This internal tool enhances support efficiency, reduces redundant inquiries, and
 - 🗃️ **Category & Status Filters** – Narrow down FAQs based on topic or issue status
 - ✍️ **Admin Panel** – Add, edit, and mark FAQs as resolved or pending
 - 👥 **User & Admin Roles** – Controlled access to ensure secure FAQ management
-- 📈 **Activity Logging** *(optional enhancement)* – Track FAQ usage and admin edits
+- 📈 **Activity Logging** – Track FAQ usage and admin edits
 
 ## 🎯 Purpose
 
@@ -34,4 +34,4 @@ The goal of VFI Support is to:
 
 1. Clone the repository  
    ```bash
-   git clone https://github.com/your-username/vfi-support.git
+   git clone https://github.com/Kurtqttt/vfi-support.git
