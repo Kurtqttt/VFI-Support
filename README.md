@@ -1,10 +1,10 @@
-# 📚 VFI Support – Knowledge Base System
+# 📚 VFI-Support – Knowledge Base System
 
-Welcome to **VFI Support**, a custom-built **Knowledge Base System** designed to streamline access to FAQs and technical support within the **IT Infrastructure Department** of **Virginia Food Inc.** 🏢
+Welcome to **VFI-Support**, a custom-built **Knowledge Base System** designed to streamline access to FAQs and technical support within the **IT Infrastructure Department** of **Virginia Food Inc.** 🏢
 
 ## 🚀 Overview
 
-**VFI Support** serves as a centralized FAQ system where **employees** can search and view common concerns, while **IT admins** can manage, update, and respond to frequently asked questions with ease.
+**VFI-Support** serves as a centralized FAQ system where **employees** can search and view common concerns, while **IT admins** can manage, update, and respond to frequently asked questions with ease.
 
 This internal tool enhances support efficiency, reduces redundant inquiries, and ensures quick access to verified IT solutions.
 
