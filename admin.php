@@ -1,8 +1,6 @@
 <?php
-
 require 'auth.php';
 require 'includes/db.php';
-
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -12,17 +10,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $status = $_POST['status'] ?? 'not solved';
         $stmt = $pdo->prepare("INSERT INTO faqs (question, answer, status) VALUES (?, ?, ?)");
         $stmt->execute([$q, $a, $status]);
-
     }
     
     if ($_POST['action'] === 'update') {
-    $id = $_POST['id'];
-    $q = $_POST['question'];
-    $a = $_POST['answer'];
-    $s = $_POST['status'] ?? 'not solved'; // Get status
-    $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ? WHERE id = ?");
-    $stmt->execute([$q, $a, $s, $id]);
-}
+        $id = $_POST['id'];
+        $q = $_POST['question'];
+        $a = $_POST['answer'];
+        $s = $_POST['status'] ?? 'not solved';
+        $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ? WHERE id = ?");
+        $stmt->execute([$q, $a, $s, $id]);
+    }
     
     if ($_POST['action'] === 'delete') {
         $id = $_POST['id'];
@@ -37,6 +34,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Load all FAQs
 $stmt = $pdo->query("SELECT * FROM faqs ORDER BY id DESC");
 $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Calculate statistics
+$totalFaqs = count($faqs);
+$resolvedCount = 0;
+$unsolvedCount = 0;
+$monthlyStats = [];
+$statusStats = [];
+
+foreach ($faqs as $faq) {
+    if ($faq['status'] === 'resolved') {
+        $resolvedCount++;
+    } else {
+        $unsolvedCount++;
+    }
+}
+
+// Get monthly statistics (last 6 months)
+$monthlyQuery = "
+    SELECT 
+        DATE_FORMAT(created_at, '%Y-%m') as month,
+        COUNT(*) as count,
+        SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved,
+        SUM(CASE WHEN status = 'not solved' THEN 1 ELSE 0 END) as unsolved
+    FROM faqs 
+    WHERE created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+    GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+    ORDER BY month DESC
+    LIMIT 6
+";
+
+try {
+    $monthlyStmt = $pdo->query($monthlyQuery);
+    $monthlyStats = $monthlyStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    // If created_at column doesn't exist, use empty array
+    $monthlyStats = [];
+}
+
+// Calculate percentages
+$resolvedPercentage = $totalFaqs > 0 ? round(($resolvedCount / $totalFaqs) * 100, 1) : 0;
+$unsolvedPercentage = $totalFaqs > 0 ? round(($unsolvedCount / $totalFaqs) * 100, 1) : 0;
+
+// Prepare data for JavaScript
+$chartData = [
+    'total' => $totalFaqs,
+    'resolved' => $resolvedCount,
+    'unsolved' => $unsolvedCount,
+    'resolvedPercentage' => $resolvedPercentage,
+    'unsolvedPercentage' => $unsolvedPercentage,
+    'monthly' => array_reverse($monthlyStats)
+];
 ?>
 
 <!DOCTYPE html>
@@ -47,6 +95,7 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <title>Admin - Manage FAQs</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="admin-body">
     <div class="admin-background">
@@ -63,10 +112,6 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     </div>
                 </div>
                 <div class="admin-actions">
-                    <button class="stats-btn" onclick="showStats()">
-                        <i class="fas fa-chart-bar"></i>
-                        <span>Stats</span>
-                    </button>
                     <form method="get" action="logout.php" style="display: inline;">
                         <button type="submit" class="logout-btn">
                             <i class="fas fa-sign-out-alt"></i>
@@ -77,8 +122,52 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
 
-        <!-- Main Content -->
+        <!-- Quick Stats Cards -->
         <div class="admin-container">
+            <div class="stats-cards-container">
+                <div class="stats-card">
+                    <div class="stats-card-icon total">
+                        <i class="fas fa-question-circle"></i>
+                    </div>
+                    <div class="stats-card-content">
+                        <h3><?= $totalFaqs ?></h3>
+                        <p>Total FAQs</p>
+                    </div>
+                </div>
+                
+                <div class="stats-card">
+                    <div class="stats-card-icon resolved">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <div class="stats-card-content">
+                        <h3><?= $resolvedCount ?></h3>
+                        <p>Resolved</p>
+                        <span class="percentage"><?= $resolvedPercentage ?>%</span>
+                    </div>
+                </div>
+                
+                <div class="stats-card">
+                    <div class="stats-card-icon unsolved">
+                        <i class="fas fa-exclamation-circle"></i>
+                    </div>
+                    <div class="stats-card-content">
+                        <h3><?= $unsolvedCount ?></h3>
+                        <p>Unsolved</p>
+                        <span class="percentage"><?= $unsolvedPercentage ?>%</span>
+                    </div>
+                </div>
+                
+                <div class="stats-card">
+                    <div class="stats-card-icon rate">
+                        <i class="fas fa-percentage"></i>
+                    </div>
+                    <div class="stats-card-content">
+                        <h3><?= $resolvedPercentage ?>%</h3>
+                        <p>Resolution Rate</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- Add FAQ Section -->
             <div class="admin-card">
                 <div class="card-header">
@@ -104,16 +193,15 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             </label>
                             <textarea name="answer" id="answer" placeholder="Enter a details or provide a link..." class="modern-textarea" required></textarea>
                         </div>
-
                         <div class="form-group">
-    <label for="status" class="form-label">
-        <i class="fas fa-check-circle"></i> Status
-    </label>
-    <select name="status" class="modern-input" required>
-        <option value="resolved">Resolved</option>
-        <option value="not solved" selected>Not Solved</option>
-    </select>
-</div>
+                            <label for="status" class="form-label">
+                                <i class="fas fa-check-circle"></i> Status
+                            </label>
+                            <select name="status" class="modern-input" required>
+                                <option value="resolved">Resolved</option>
+                                <option value="not solved" selected>Not Solved</option>
+                            </select>
+                        </div>
                         
                         <input type="hidden" name="action" value="add">
                         <button type="submit" class="modern-btn primary">
@@ -133,16 +221,14 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <span class="faq-count">(<?= count($faqs) ?> items)</span>
                     </h2>
                     <div class="search-wrapper">
-    <i class="fas fa-search search-icon"></i>
-    <input type="text" id="adminSearch" class="search-input" placeholder="Search FAQs...">
-
-    <select id="adminStatusFilter" class="status-filter-dropdown" onchange="filterAdminFaqs()">
-        <option value="all">All Status</option>
-        <option value="resolved">Resolved</option>
-        <option value="not solved">Not Solved</option>
-    </select>
-</div>
-
+                        <i class="fas fa-search search-icon"></i>
+                        <input type="text" id="adminSearch" class="search-input" placeholder="Search FAQs...">
+                        <select id="adminStatusFilter" class="status-filter-dropdown" onchange="filterAdminFaqs()">
+                            <option value="all">All Status</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="not solved">Unresolved</option>
+                        </select>
+                    </div>
                 </div>
                 
                 <div class="card-content">
@@ -158,6 +244,10 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <div class="faq-item" data-index="<?= $index ?>">
                                     <div class="faq-item-header">
                                         <span class="faq-number">#<?= $faq['id'] ?></span>
+                                        <span class="status-badge <?= $faq['status'] === 'resolved' ? 'resolved' : 'unsolved' ?>">
+                                            <i class="fas <?= $faq['status'] === 'resolved' ? 'fa-check-circle' : 'fa-exclamation-circle' ?>"></i>
+                                            <?= ucfirst(str_replace('_', ' ', $faq['status'])) ?>
+                                        </span>
                                         <div class="faq-actions">
                                             <button type="button" class="action-btn edit" onclick="toggleEdit(<?= $index ?>)">
                                                 <i class="fas fa-edit"></i>
@@ -180,15 +270,13 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                             <label class="form-label">Details</label>
                                             <textarea name="answer" class="modern-textarea" readonly required><?= htmlspecialchars($faq['answer']) ?></textarea>
                                         </div>
-
                                         <div class="form-group">
-    <label class="form-label">Status</label>
-    <select name="status" class="modern-input" required readonly>
-        <option value="resolved" <?= $faq['status'] === 'resolved' ? 'selected' : '' ?>>Resolved</option>
-        <option value="not solved" <?= $faq['status'] === 'not solved' ? 'selected' : '' ?>>Not Solved</option>
-    </select>
-</div>
-
+                                            <label class="form-label">Status</label>
+                                            <select name="status" class="modern-input" required readonly>
+                                                <option value="resolved" <?= $faq['status'] === 'resolved' ? 'selected' : '' ?>>Resolved</option>
+                                                <option value="not solved" <?= $faq['status'] === 'not solved' ? 'selected' : '' ?>>Unresolved</option>
+                                            </select>
+                                        </div>
                                         
                                         <div class="form-actions" style="display: none;">
                                             <button type="submit" name="action" value="update" class="modern-btn success">
@@ -209,7 +297,6 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
 
-        <!-- Animated background elements -->
         <div class="bg-animation">
             <div class="floating-shape shape-1"></div>
             <div class="floating-shape shape-2"></div>
@@ -218,7 +305,7 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- Enhanced Delete Confirmation Modal -->
+    <!-- Delete Confirmation Modal -->
     <div id="deleteModal" class="modal">
         <div class="modal-content delete-modal-content">
             <div class="modal-header delete-modal-header">
@@ -256,41 +343,79 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- Stats Modal -->
+    <!-- Enhanced Stats Modal with Charts -->
     <div id="statsModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content stats-modal-content">
             <div class="modal-header">
-                <h3><i class="fas fa-chart-bar"></i> FAQ Statistics</h3>
+                <h3><i class="fas fa-chart-bar"></i> FAQ Analytics Dashboard</h3>
                 <button class="close-modal" onclick="closeStatsModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <div class="stat-icon">
-                            <i class="fas fa-question-circle"></i>
+                <div class="analytics-container">
+                    <!-- Summary Stats -->
+                    <div class="analytics-summary">
+                        <div class="summary-item">
+                            <div class="summary-icon total">
+                                <i class="fas fa-question-circle"></i>
+                            </div>
+                            <div class="summary-content">
+                                <h4><?= $totalFaqs ?></h4>
+                                <p>Total FAQs</p>
+                            </div>
                         </div>
-                        <div class="stat-info">
-                            <h4><?= count($faqs) ?></h4>
-                            <p>Total FAQs</p>
+                        <div class="summary-item">
+                            <div class="summary-icon resolved">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div class="summary-content">
+                                <h4><?= $resolvedCount ?></h4>
+                                <p>Resolved</p>
+                            </div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-icon unsolved">
+                                <i class="fas fa-exclamation-circle"></i>
+                            </div>
+                            <div class="summary-content">
+                                <h4><?= $unsolvedCount ?></h4>
+                                <p>Unsolved</p>
+                            </div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-icon admin">
+                                <i class="fas fa-user-shield"></i>
+                            </div>
+                            <div class="summary-content">
+                                <h4><?= htmlspecialchars($_SESSION['user']) ?></h4>
+                                <p>Admin User</p>
+                            </div>
                         </div>
                     </div>
-                    <div class="stat-item">
-                        <div class="stat-icon">
-                            <i class="fas fa-user"></i>
+
+                    <!-- Charts Container -->
+                    <div class="charts-container">
+                        <div class="chart-item">
+                            <h4><i class="fas fa-chart-pie"></i> Status Distribution</h4>
+                            <div class="chart-wrapper">
+                                <canvas id="statusPieChart"></canvas>
+                            </div>
                         </div>
-                        <div class="stat-info">
-                            <h4><?= htmlspecialchars($_SESSION['user']) ?></h4>
-                            <p>Admin User</p>
+                        
+                        <div class="chart-item">
+                            <h4><i class="fas fa-chart-bar"></i> Resolution Progress</h4>
+                            <div class="chart-wrapper">
+                                <canvas id="progressBarChart"></canvas>
+                            </div>
                         </div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-icon">
-                            <i class="fas fa-clock"></i>
+                        
+                        <?php if (!empty($monthlyStats)): ?>
+                        <div class="chart-item full-width">
+                            <h4><i class="fas fa-chart-line"></i> Monthly Trends</h4>
+                            <div class="chart-wrapper">
+                                <canvas id="monthlyLineChart"></canvas>
+                            </div>
                         </div>
-                        <div class="stat-info">
-                            <h4><?= date('H:i') ?></h4>
-                            <p>Current Time</p>
-                        </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -304,173 +429,318 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 
     <script>
-    let deleteId = null;
-    let deleteQuestion = '';
+        // PHP data for JavaScript
+        const chartData = <?= json_encode($chartData) ?>;
+        
+        let deleteId = null;
+        let deleteQuestion = '';
+        let charts = {};
 
-    // Filter FAQs by both search and status
-    function filterFaqs() {
-        const query = document.getElementById('adminSearch').value.toLowerCase();
-        const selectedStatus = document.getElementById('adminStatusFilter')?.value || 'all';
-        const faqs = document.querySelectorAll('.faq-item');
-        let visibleCount = 0;
+        // Filter FAQs by both search and status
+        function filterFaqs() {
+            const query = document.getElementById('adminSearch').value.toLowerCase();
+            const selectedStatus = document.getElementById('adminStatusFilter')?.value || 'all';
+            const faqs = document.querySelectorAll('.faq-item');
+            let visibleCount = 0;
 
-        faqs.forEach(faq => {
-            const question = faq.querySelector('input[name="question"]').value.toLowerCase();
-            const answer = faq.querySelector('textarea[name="answer"]').value.toLowerCase();
-            const status = faq.querySelector('select[name="status"]').value;
+            faqs.forEach(faq => {
+                const question = faq.querySelector('input[name="question"]').value.toLowerCase();
+                const answer = faq.querySelector('textarea[name="answer"]').value.toLowerCase();
+                const status = faq.querySelector('select[name="status"]').value;
+                const matchesQuery = question.includes(query) || answer.includes(query);
+                const matchesStatus = selectedStatus === 'all' || status === selectedStatus;
 
-            const matchesQuery = question.includes(query) || answer.includes(query);
-            const matchesStatus = selectedStatus === 'all' || status === selectedStatus;
+                if (matchesQuery && matchesStatus) {
+                    faq.style.display = 'block';
+                    visibleCount++;
+                } else {
+                    faq.style.display = 'none';
+                }
+            });
 
-            if (matchesQuery && matchesStatus) {
-                faq.style.display = 'block';
-                visibleCount++;
-            } else {
-                faq.style.display = 'none';
+            const countElement = document.querySelector('.faq-count');
+            if (countElement) {
+                countElement.textContent = `(${visibleCount} items)`;
+            }
+        }
+
+        // Search bar listener
+        document.getElementById('adminSearch').addEventListener('input', () => {
+            filterFaqs();
+            const searchIcon = document.querySelector('.search-icon');
+            searchIcon.classList.add('fa-spin');
+            setTimeout(() => {
+                searchIcon.classList.remove('fa-spin');
+            }, 300);
+        });
+
+        // Dropdown filter listener
+        document.getElementById('adminStatusFilter').addEventListener('change', filterFaqs);
+
+        // Edit mode functions
+        function toggleEdit(index) {
+            const form = document.getElementById(`faqForm${index}`);
+            const inputs = form.querySelectorAll('input[type="text"], textarea');
+            const selects = form.querySelectorAll('select');
+            const actions = form.querySelector('.form-actions');
+            const editBtn = form.closest('.faq-item').querySelector('.edit');
+
+            inputs.forEach(input => {
+                input.readOnly = false;
+                input.classList.add('editing');
+            });
+
+            selects.forEach(select => {
+                select.disabled = false;
+                select.classList.add('editing');
+            });
+
+            actions.style.display = 'flex';
+            editBtn.innerHTML = '<i class="fas fa-eye"></i>';
+            editBtn.onclick = () => cancelEdit(index);
+        }
+
+        function cancelEdit(index) {
+            const form = document.getElementById(`faqForm${index}`);
+            const inputs = form.querySelectorAll('input[type="text"], textarea');
+            const selects = form.querySelectorAll('select');
+            const actions = form.querySelector('.form-actions');
+            const editBtn = form.closest('.faq-item').querySelector('.edit');
+
+            inputs.forEach(input => {
+                input.readOnly = true;
+                input.classList.remove('editing');
+            });
+
+            selects.forEach(select => {
+                select.disabled = true;
+                select.classList.remove('editing');
+            });
+
+            actions.style.display = 'none';
+            editBtn.innerHTML = '<i class="fas fa-edit"></i>';
+            editBtn.onclick = () => toggleEdit(index);
+            location.reload();
+        }
+
+        // Delete confirmation functions
+        function confirmDelete(id, question) {
+            deleteId = id;
+            deleteQuestion = question;
+            document.getElementById('delete-question-preview').innerHTML = `<strong>"${question}"</strong>`;
+            document.getElementById('deleteModal').style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+        }
+
+        function deleteFaq() {
+            if (deleteId) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="id" value="${deleteId}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').style.display = 'none';
+            document.body.style.overflow = 'auto';
+            deleteId = null;
+            deleteQuestion = '';
+        }
+
+        // Stats modal and charts
+        function showStats() {
+            document.getElementById('statsModal').style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+            
+            // Initialize charts after modal is shown
+            setTimeout(() => {
+                initializeCharts();
+            }, 100);
+        }
+
+        function closeStatsModal() {
+            document.getElementById('statsModal').style.display = 'none';
+            document.body.style.overflow = 'auto';
+            
+            // Destroy existing charts
+            Object.values(charts).forEach(chart => {
+                if (chart) chart.destroy();
+            });
+            charts = {};
+        }
+
+        function initializeCharts() {
+            // Destroy existing charts first
+            Object.values(charts).forEach(chart => {
+                if (chart) chart.destroy();
+            });
+
+            // Status Pie Chart
+            const pieCtx = document.getElementById('statusPieChart');
+            if (pieCtx) {
+                charts.pie = new Chart(pieCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Resolved', 'Unsolved'],
+                        datasets: [{
+                            data: [chartData.resolved, chartData.unsolved],
+                            backgroundColor: ['#10b981', '#f59e0b'],
+                            borderColor: ['#059669', '#d97706'],
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    padding: 20,
+                                    usePointStyle: true
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Progress Bar Chart
+            const barCtx = document.getElementById('progressBarChart');
+            if (barCtx) {
+                charts.bar = new Chart(barCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Resolution Progress'],
+                        datasets: [
+                            {
+                                label: 'Resolved',
+                                data: [chartData.resolved],
+                                backgroundColor: '#10b981',
+                                borderColor: '#059669',
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Unsolved',
+                                data: [chartData.unsolved],
+                                backgroundColor: '#f59e0b',
+                                borderColor: '#d97706',
+                                borderWidth: 1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Monthly Line Chart (if data available)
+            const lineCtx = document.getElementById('monthlyLineChart');
+            if (lineCtx && chartData.monthly && chartData.monthly.length > 0) {
+                const months = chartData.monthly.map(item => {
+                    const date = new Date(item.month + '-01');
+                    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                });
+                
+                charts.line = new Chart(lineCtx, {
+                    type: 'line',
+                    data: {
+                        labels: months,
+                        datasets: [
+                            {
+                                label: 'Total FAQs',
+                                data: chartData.monthly.map(item => item.count),
+                                borderColor: '#3b82f6',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                tension: 0.4
+                            },
+                            {
+                                label: 'Resolved',
+                                data: chartData.monthly.map(item => item.resolved),
+                                borderColor: '#10b981',
+                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                tension: 0.4
+                            },
+                            {
+                                label: 'Unsolved',
+                                data: chartData.monthly.map(item => item.unsolved),
+                                borderColor: '#f59e0b',
+                                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                                tension: 0.4
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Add form loader
+        document.getElementById('addFaqForm').addEventListener('submit', function(e) {
+            const submitBtn = this.querySelector('button[type="submit"]');
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Adding...</span>';
+            submitBtn.disabled = true;
+        });
+
+        // Close modals when clicking outside
+        window.addEventListener('click', function(e) {
+            const deleteModal = document.getElementById('deleteModal');
+            const statsModal = document.getElementById('statsModal');
+            if (e.target === deleteModal) closeDeleteModal();
+            if (e.target === statsModal) closeStatsModal();
+        });
+
+        // Close modals with Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeDeleteModal();
+                closeStatsModal();
             }
         });
 
-        const countElement = document.querySelector('.faq-count');
-        if (countElement) {
-            countElement.textContent = `(${visibleCount} items)`;
-        }
-    }
-
-    // Search bar listener
-    document.getElementById('adminSearch').addEventListener('input', () => {
-        filterFaqs();
-
-        // Add animation
-        const searchIcon = document.querySelector('.search-icon');
-        searchIcon.classList.add('fa-spin');
-        setTimeout(() => {
-            searchIcon.classList.remove('fa-spin');
-        }, 300);
-    });
-
-    // Dropdown filter listener
-    document.getElementById('adminStatusFilter').addEventListener('change', filterFaqs);
-
-    // Edit mode
-    function toggleEdit(index) {
-        const form = document.getElementById(`faqForm${index}`);
-        const inputs = form.querySelectorAll('input[type="text"], textarea');
-        const selects = form.querySelectorAll('select');
-        const actions = form.querySelector('.form-actions');
-        const editBtn = form.closest('.faq-item').querySelector('.edit');
-
-        inputs.forEach(input => {
-            input.readOnly = false;
-            input.classList.add('editing');
+        // Auto-resize textareas
+        document.querySelectorAll('textarea').forEach(textarea => {
+            textarea.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = this.scrollHeight + 'px';
+            });
         });
-
-        selects.forEach(select => {
-            select.disabled = false;
-            select.classList.add('editing');
-        });
-
-        actions.style.display = 'flex';
-        editBtn.innerHTML = '<i class="fas fa-eye"></i>';
-        editBtn.onclick = () => cancelEdit(index);
-    }
-
-    function cancelEdit(index) {
-        const form = document.getElementById(`faqForm${index}`);
-        const inputs = form.querySelectorAll('input[type="text"], textarea');
-        const selects = form.querySelectorAll('select');
-        const actions = form.querySelector('.form-actions');
-        const editBtn = form.closest('.faq-item').querySelector('.edit');
-
-        inputs.forEach(input => {
-            input.readOnly = true;
-            input.classList.remove('editing');
-        });
-
-        selects.forEach(select => {
-            select.disabled = true;
-            select.classList.remove('editing');
-        });
-
-        actions.style.display = 'none';
-        editBtn.innerHTML = '<i class="fas fa-edit"></i>';
-        editBtn.onclick = () => toggleEdit(index);
-
-        // Reset values by reloading (for simplicity)
-        form.reset();
-        location.reload();
-    }
-
-    // Delete confirmation
-    function confirmDelete(id, question) {
-        deleteId = id;
-        deleteQuestion = question;
-        document.getElementById('delete-question-preview').innerHTML = `<strong>"${question}"</strong>`;
-        document.getElementById('deleteModal').style.display = 'flex';
-        document.body.style.overflow = 'hidden';
-    }
-
-    function deleteFaq() {
-        if (deleteId) {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.innerHTML = `
-                <input type="hidden" name="action" value="delete">
-                <input type="hidden" name="id" value="${deleteId}">
-            `;
-            document.body.appendChild(form);
-            form.submit();
-        }
-    }
-
-    function closeDeleteModal() {
-        document.getElementById('deleteModal').style.display = 'none';
-        document.body.style.overflow = 'auto';
-        deleteId = null;
-        deleteQuestion = '';
-    }
-
-    // Stats modal
-    function showStats() {
-        document.getElementById('statsModal').style.display = 'flex';
-        document.body.style.overflow = 'hidden';
-    }
-
-    function closeStatsModal() {
-        document.getElementById('statsModal').style.display = 'none';
-        document.body.style.overflow = 'auto';
-    }
-
-    // Add form loader
-    document.getElementById('addFaqForm').addEventListener('submit', function(e) {
-        const submitBtn = this.querySelector('button[type="submit"]');
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Adding...</span>';
-        submitBtn.disabled = true;
-    });
-
-    // Close modals when clicking outside
-    window.addEventListener('click', function(e) {
-        const deleteModal = document.getElementById('deleteModal');
-        const statsModal = document.getElementById('statsModal');
-        if (e.target === deleteModal) closeDeleteModal();
-        if (e.target === statsModal) closeStatsModal();
-    });
-
-    // Close modals with Escape
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            closeDeleteModal();
-            closeStatsModal();
-        }
-    });
-
-    // Auto-resize textareas
-    document.querySelectorAll('textarea').forEach(textarea => {
-        textarea.addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = this.scrollHeight + 'px';
-        });
-    });
-</script>
-
+    </script>
 </body>
 </html>

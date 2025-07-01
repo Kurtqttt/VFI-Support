@@ -56,7 +56,7 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <select id="statusFilter" onchange="filterFAQs()" class="modern-filter-dropdown">
         <option value="all">All Status</option>
         <option value="resolved">Resolved</option>
-        <option value="not solved">Not Solved</option>
+        <option value="not solved">Unresolved</option>
     </select>
 
     <div class="search-results-count" id="resultsCount">
