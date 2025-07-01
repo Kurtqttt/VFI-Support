@@ -49,14 +49,23 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <p class="search-description">Type your question or keywords to find relevant answers</p>
             </div>
             <div class="search-content">
-                <div class="search-input-wrapper">
-                    <i class="fas fa-search search-input-icon"></i>
-                    <input type="text" id="faqSearch" onkeyup="filterFAQs()" placeholder="Search FAQs..." class="modern-search-input">
-                    <div class="search-results-count" id="resultsCount">
-                        <?= count($faqs) ?> FAQs available
-                    </div>
-                </div>
-            </div>
+    <div class="search-input-wrapper">
+    <i class="fas fa-search search-input-icon"></i>
+    <input type="text" id="faqSearch" onkeyup="filterFAQs()" placeholder="Search FAQs..." class="modern-search-input">
+
+    <select id="statusFilter" onchange="filterFAQs()" class="modern-filter-dropdown">
+        <option value="all">All Status</option>
+        <option value="resolved">Resolved</option>
+        <option value="not solved">Not Solved</option>
+    </select>
+
+    <div class="search-results-count" id="resultsCount">
+        <?= count($faqs) ?> FAQs available
+    </div>
+</div>
+
+</div>
+
         </div>
 
         <!-- FAQ List Section -->
@@ -86,23 +95,30 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         </div>
                     <?php else: ?>
                         <?php foreach ($faqs as $index => $faq): ?>
-                            <div class="faq-box modern-faq-item" data-index="<?= $index ?>" onclick="showModal('<?= htmlspecialchars($faq['question'], ENT_QUOTES) ?>', '<?= htmlspecialchars($faq['answer'], ENT_QUOTES) ?>')">
-                                <div class="faq-item-content">
-                                    <div class="faq-question">
-                                        <h3><?= htmlspecialchars($faq['question']) ?></h3>
-                                        <div class="faq-preview">
-                                            <?= htmlspecialchars(mb_strimwidth($faq['answer'], 0, 100, '...')) ?>
-                                        </div>
-                                    </div>
-                                    <div class="faq-arrow">
-                                        <i class="fas fa-chevron-right"></i>
-                                    </div>
-                                </div>
-                                <div class="faq-item-footer">
-                                    <span class="faq-id">#<?= $faq['id'] ?></span>
-                                    <span class="click-hint">Click to read full answer</span>
-                                </div>
-                            </div>
+                            <div class="faq-box modern-faq-item" 
+     data-index="<?= $index ?>" 
+     data-status="<?= strtolower($faq['status']) ?>"
+     onclick="showModal('<?= htmlspecialchars($faq['question'], ENT_QUOTES) ?>', '<?= htmlspecialchars($faq['answer'], ENT_QUOTES) ?>')">
+    <div class="faq-item-content">
+        <div class="faq-question">
+            <h3><?= htmlspecialchars($faq['question']) ?></h3>
+            <div class="faq-preview">
+                <?= htmlspecialchars(mb_strimwidth($faq['answer'], 0, 100, '...')) ?>
+            </div>
+        </div>
+        <div class="faq-arrow">
+            <i class="fas fa-chevron-right"></i>
+        </div>
+    </div>
+    <div class="faq-item-footer">
+        <span class="faq-id">#<?= $faq['id'] ?></span>
+        <span class="faq-status <?= $faq['status'] === 'resolved' ? 'status-resolved' : 'status-unsolved' ?>">
+            <?= ucfirst($faq['status']) ?>
+        </span>
+        <span class="click-hint">Click to read full answer</span>
+    </div>
+</div>
+
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </div>
@@ -156,34 +172,40 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
         document.body.style.overflow = "auto"; // Restore scrolling
     }
 
-    function filterFAQs() {
-        const query = document.getElementById("faqSearch").value.toLowerCase();
-        const faqs = document.querySelectorAll(".faq-box");
-        const resultsCount = document.getElementById("resultsCount");
-        const noResults = document.getElementById("no-results");
-        let found = 0;
+function filterFAQs() {
+    const query = document.getElementById("faqSearch").value.toLowerCase();
+    const statusFilter = document.getElementById("statusFilter").value;
+    const faqs = document.querySelectorAll(".faq-box");
+    const resultsCount = document.getElementById("resultsCount");
+    const noResults = document.getElementById("no-results");
+    let found = 0;
 
-        faqs.forEach(faq => {
-            const question = faq.querySelector("h3").textContent.toLowerCase();
-            const preview = faq.querySelector(".faq-preview").textContent.toLowerCase();
-            
-            if (question.includes(query) || preview.includes(query)) {
-                faq.style.display = "block";
-                found++;
-            } else {
-                faq.style.display = "none";
-            }
-        });
+    faqs.forEach(faq => {
+        const question = faq.querySelector("h3").textContent.toLowerCase();
+        const preview = faq.querySelector(".faq-preview").textContent.toLowerCase();
+        const status = faq.getAttribute('data-status'); // ✅ this is the line you asked about
 
-        // Update results count
-        if (query.trim() === "") {
-            resultsCount.textContent = `${totalFaqs} FAQs available`;
-            noResults.style.display = "none";
+        const matchesText = question.includes(query) || preview.includes(query);
+        const matchesStatus = statusFilter === "all" || status === statusFilter;
+
+        if (matchesText && matchesStatus) {
+            faq.style.display = "block";
+            found++;
         } else {
-            resultsCount.textContent = `${found} result${found !== 1 ? 's' : ''} found`;
-            noResults.style.display = found === 0 ? "block" : "none";
+            faq.style.display = "none";
         }
+    });
+
+    // Update count
+    if (query.trim() === "" && statusFilter === "all") {
+        resultsCount.textContent = `${faqs.length} FAQs available`;
+        noResults.style.display = "none";
+    } else {
+        resultsCount.textContent = `${found} result${found !== 1 ? 's' : ''} found`;
+        noResults.style.display = found === 0 ? "block" : "none";
     }
+}
+
 
     // Close modal when clicking outside
     window.addEventListener('click', function(e) {

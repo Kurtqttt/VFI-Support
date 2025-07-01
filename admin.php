@@ -3,22 +3,26 @@
 require 'auth.php';
 require 'includes/db.php';
 
+
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($_POST['action'] === 'add') {
         $q = $_POST['question'];
         $a = $_POST['answer'];
-        $stmt = $pdo->prepare("INSERT INTO faqs (question, answer) VALUES (?, ?)");
-        $stmt->execute([$q, $a]);
+        $status = $_POST['status'] ?? 'not solved';
+        $stmt = $pdo->prepare("INSERT INTO faqs (question, answer, status) VALUES (?, ?, ?)");
+        $stmt->execute([$q, $a, $status]);
+
     }
     
     if ($_POST['action'] === 'update') {
-        $id = $_POST['id'];
-        $q = $_POST['question'];
-        $a = $_POST['answer'];
-        $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ? WHERE id = ?");
-        $stmt->execute([$q, $a, $id]);
-    }
+    $id = $_POST['id'];
+    $q = $_POST['question'];
+    $a = $_POST['answer'];
+    $s = $_POST['status'] ?? 'not solved'; // Get status
+    $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ? WHERE id = ?");
+    $stmt->execute([$q, $a, $s, $id]);
+}
     
     if ($_POST['action'] === 'delete') {
         $id = $_POST['id'];
@@ -100,8 +104,19 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             </label>
                             <textarea name="answer" id="answer" placeholder="Enter a details or provide a link..." class="modern-textarea" required></textarea>
                         </div>
+
+                        <div class="form-group">
+    <label for="status" class="form-label">
+        <i class="fas fa-check-circle"></i> Status
+    </label>
+    <select name="status" class="modern-input" required>
+        <option value="resolved">Resolved</option>
+        <option value="not solved" selected>Not Solved</option>
+    </select>
+</div>
                         
-                        <button type="submit" name="action" value="add" class="modern-btn primary">
+                        <input type="hidden" name="action" value="add">
+                        <button type="submit" class="modern-btn primary">
                             <i class="fas fa-plus"></i>
                             <span>Add FAQ</span>
                         </button>
@@ -118,9 +133,16 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <span class="faq-count">(<?= count($faqs) ?> items)</span>
                     </h2>
                     <div class="search-wrapper">
-                        <i class="fas fa-search search-icon"></i>
-                        <input type="text" id="adminSearch" class="search-input" placeholder="Search FAQs...">
-                    </div>
+    <i class="fas fa-search search-icon"></i>
+    <input type="text" id="adminSearch" class="search-input" placeholder="Search FAQs...">
+
+    <select id="adminStatusFilter" class="status-filter-dropdown" onchange="filterAdminFaqs()">
+        <option value="all">All Status</option>
+        <option value="resolved">Resolved</option>
+        <option value="not solved">Not Solved</option>
+    </select>
+</div>
+
                 </div>
                 
                 <div class="card-content">
@@ -158,6 +180,15 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                             <label class="form-label">Details</label>
                                             <textarea name="answer" class="modern-textarea" readonly required><?= htmlspecialchars($faq['answer']) ?></textarea>
                                         </div>
+
+                                        <div class="form-group">
+    <label class="form-label">Status</label>
+    <select name="status" class="modern-input" required readonly>
+        <option value="resolved" <?= $faq['status'] === 'resolved' ? 'selected' : '' ?>>Resolved</option>
+        <option value="not solved" <?= $faq['status'] === 'not solved' ? 'selected' : '' ?>>Not Solved</option>
+    </select>
+</div>
+
                                         
                                         <div class="form-actions" style="display: none;">
                                             <button type="submit" name="action" value="update" class="modern-btn success">
@@ -273,156 +304,173 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 
     <script>
-        let deleteId = null;
-        let deleteQuestion = '';
+    let deleteId = null;
+    let deleteQuestion = '';
 
-        // Search functionality
-        document.getElementById('adminSearch').addEventListener('input', function () {
-            const query = this.value.toLowerCase();
-            const faqs = document.querySelectorAll('.faq-item');
-            let visibleCount = 0;
-            
-            faqs.forEach(faq => {
-                const question = faq.querySelector('input[name="question"]').value.toLowerCase();
-                const answer = faq.querySelector('textarea[name="answer"]').value.toLowerCase();
-                
-                if (question.includes(query) || answer.includes(query)) {
-                    faq.style.display = 'block';
-                    visibleCount++;
-                } else {
-                    faq.style.display = 'none';
-                }
-            });
-            
-            // Update count
-            const countElement = document.querySelector('.faq-count');
-            if (countElement) {
-                countElement.textContent = `(${visibleCount} items)`;
+    // Filter FAQs by both search and status
+    function filterFaqs() {
+        const query = document.getElementById('adminSearch').value.toLowerCase();
+        const selectedStatus = document.getElementById('adminStatusFilter')?.value || 'all';
+        const faqs = document.querySelectorAll('.faq-item');
+        let visibleCount = 0;
+
+        faqs.forEach(faq => {
+            const question = faq.querySelector('input[name="question"]').value.toLowerCase();
+            const answer = faq.querySelector('textarea[name="answer"]').value.toLowerCase();
+            const status = faq.querySelector('select[name="status"]').value;
+
+            const matchesQuery = question.includes(query) || answer.includes(query);
+            const matchesStatus = selectedStatus === 'all' || status === selectedStatus;
+
+            if (matchesQuery && matchesStatus) {
+                faq.style.display = 'block';
+                visibleCount++;
+            } else {
+                faq.style.display = 'none';
             }
         });
 
-        // Edit functionality
-        function toggleEdit(index) {
-            const form = document.getElementById(`faqForm${index}`);
-            const inputs = form.querySelectorAll('input[type="text"], textarea');
-            const actions = form.querySelector('.form-actions');
-            const editBtn = form.closest('.faq-item').querySelector('.edit');
-            
-            inputs.forEach(input => {
-                input.readOnly = false;
-                input.classList.add('editing');
-            });
-            
-            actions.style.display = 'flex';
-            editBtn.innerHTML = '<i class="fas fa-eye"></i>';
-            editBtn.onclick = () => cancelEdit(index);
+        const countElement = document.querySelector('.faq-count');
+        if (countElement) {
+            countElement.textContent = `(${visibleCount} items)`;
         }
+    }
 
-        function cancelEdit(index) {
-            const form = document.getElementById(`faqForm${index}`);
-            const inputs = form.querySelectorAll('input[type="text"], textarea');
-            const actions = form.querySelector('.form-actions');
-            const editBtn = form.closest('.faq-item').querySelector('.edit');
-            
-            inputs.forEach(input => {
-                input.readOnly = true;
-                input.classList.remove('editing');
-            });
-            
-            actions.style.display = 'none';
-            editBtn.innerHTML = '<i class="fas fa-edit"></i>';
-            editBtn.onclick = () => toggleEdit(index);
-            
-            // Reset form to original values
-            form.reset();
-            location.reload(); // Simple way to reset form values
-        }
+    // Search bar listener
+    document.getElementById('adminSearch').addEventListener('input', () => {
+        filterFaqs();
 
-        // Enhanced Delete functionality
-        function confirmDelete(id, question) {
-            deleteId = id;
-            deleteQuestion = question;
-            document.getElementById('delete-question-preview').innerHTML = `<strong>"${question}"</strong>`;
-            document.getElementById('deleteModal').style.display = 'flex';
-            document.body.style.overflow = 'hidden';
-        }
+        // Add animation
+        const searchIcon = document.querySelector('.search-icon');
+        searchIcon.classList.add('fa-spin');
+        setTimeout(() => {
+            searchIcon.classList.remove('fa-spin');
+        }, 300);
+    });
 
-        function deleteFaq() {
-            if (deleteId) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.innerHTML = `
-                    <input type="hidden" name="action" value="delete">
-                    <input type="hidden" name="id" value="${deleteId}">
-                `;
-                document.body.appendChild(form);
-                form.submit();
-            }
-        }
+    // Dropdown filter listener
+    document.getElementById('adminStatusFilter').addEventListener('change', filterFaqs);
 
-        function closeDeleteModal() {
-            document.getElementById('deleteModal').style.display = 'none';
-            document.body.style.overflow = 'auto';
-            deleteId = null;
-            deleteQuestion = '';
-        }
+    // Edit mode
+    function toggleEdit(index) {
+        const form = document.getElementById(`faqForm${index}`);
+        const inputs = form.querySelectorAll('input[type="text"], textarea');
+        const selects = form.querySelectorAll('select');
+        const actions = form.querySelector('.form-actions');
+        const editBtn = form.closest('.faq-item').querySelector('.edit');
 
-        // Stats functionality
-        function showStats() {
-            document.getElementById('statsModal').style.display = 'flex';
-            document.body.style.overflow = 'hidden';
-        }
-
-        function closeStatsModal() {
-            document.getElementById('statsModal').style.display = 'none';
-            document.body.style.overflow = 'auto';
-        }
-
-        // Form submission animation
-        document.getElementById('addFaqForm').addEventListener('submit', function(e) {
-            const submitBtn = this.querySelector('button[type="submit"]');
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Adding...</span>';
-            submitBtn.disabled = true;
+        inputs.forEach(input => {
+            input.readOnly = false;
+            input.classList.add('editing');
         });
 
-        // Close modals when clicking outside
-        window.addEventListener('click', function(e) {
-            const deleteModal = document.getElementById('deleteModal');
-            const statsModal = document.getElementById('statsModal');
-            
-            if (e.target === deleteModal) {
-                closeDeleteModal();
-            }
-            if (e.target === statsModal) {
-                closeStatsModal();
-            }
+        selects.forEach(select => {
+            select.disabled = false;
+            select.classList.add('editing');
         });
 
-        // Close modals with Escape key
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                closeDeleteModal();
-                closeStatsModal();
-            }
+        actions.style.display = 'flex';
+        editBtn.innerHTML = '<i class="fas fa-eye"></i>';
+        editBtn.onclick = () => cancelEdit(index);
+    }
+
+    function cancelEdit(index) {
+        const form = document.getElementById(`faqForm${index}`);
+        const inputs = form.querySelectorAll('input[type="text"], textarea');
+        const selects = form.querySelectorAll('select');
+        const actions = form.querySelector('.form-actions');
+        const editBtn = form.closest('.faq-item').querySelector('.edit');
+
+        inputs.forEach(input => {
+            input.readOnly = true;
+            input.classList.remove('editing');
         });
 
-        // Auto-resize textareas
-        document.querySelectorAll('textarea').forEach(textarea => {
-            textarea.addEventListener('input', function() {
-                this.style.height = 'auto';
-                this.style.height = this.scrollHeight + 'px';
-            });
+        selects.forEach(select => {
+            select.disabled = true;
+            select.classList.remove('editing');
         });
 
-        // Add search animation
-        document.getElementById('adminSearch').addEventListener('input', function() {
-            const searchIcon = document.querySelector('.search-icon');
-            searchIcon.classList.add('fa-spin');
-            
-            setTimeout(() => {
-                searchIcon.classList.remove('fa-spin');
-            }, 300);
+        actions.style.display = 'none';
+        editBtn.innerHTML = '<i class="fas fa-edit"></i>';
+        editBtn.onclick = () => toggleEdit(index);
+
+        // Reset values by reloading (for simplicity)
+        form.reset();
+        location.reload();
+    }
+
+    // Delete confirmation
+    function confirmDelete(id, question) {
+        deleteId = id;
+        deleteQuestion = question;
+        document.getElementById('delete-question-preview').innerHTML = `<strong>"${question}"</strong>`;
+        document.getElementById('deleteModal').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+
+    function deleteFaq() {
+        if (deleteId) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.innerHTML = `
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="id" value="${deleteId}">
+            `;
+            document.body.appendChild(form);
+            form.submit();
+        }
+    }
+
+    function closeDeleteModal() {
+        document.getElementById('deleteModal').style.display = 'none';
+        document.body.style.overflow = 'auto';
+        deleteId = null;
+        deleteQuestion = '';
+    }
+
+    // Stats modal
+    function showStats() {
+        document.getElementById('statsModal').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeStatsModal() {
+        document.getElementById('statsModal').style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+
+    // Add form loader
+    document.getElementById('addFaqForm').addEventListener('submit', function(e) {
+        const submitBtn = this.querySelector('button[type="submit"]');
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Adding...</span>';
+        submitBtn.disabled = true;
+    });
+
+    // Close modals when clicking outside
+    window.addEventListener('click', function(e) {
+        const deleteModal = document.getElementById('deleteModal');
+        const statsModal = document.getElementById('statsModal');
+        if (e.target === deleteModal) closeDeleteModal();
+        if (e.target === statsModal) closeStatsModal();
+    });
+
+    // Close modals with Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeDeleteModal();
+            closeStatsModal();
+        }
+    });
+
+    // Auto-resize textareas
+    document.querySelectorAll('textarea').forEach(textarea => {
+        textarea.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = this.scrollHeight + 'px';
         });
-    </script>
+    });
+</script>
+
 </body>
 </html>
