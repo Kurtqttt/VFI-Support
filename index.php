@@ -37,7 +37,7 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
             <div class="header-actions">
                 <a href="mainlogin.php" class="admin-login-btn">
-                    <i class="fas fa-shield-alt"></i>
+                    <i class="fas fa-sign-out-alt"></i>
                     <span>Logout</span>
                 </a>
             </div>

@@ -989,6 +989,7 @@ button {
 .input-icon {
   position: absolute;
   left: 15px;
+  bottom: 32px;
   color: #999;
   font-size: 16px;
   z-index: 2;
@@ -1031,6 +1032,7 @@ button {
 .toggle-password {
   position: absolute;
   right: 15px;
+  bottom: 25px;
   background: none;
   border: none;
   color: #999;
