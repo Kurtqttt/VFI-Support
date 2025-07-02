@@ -3,6 +3,8 @@ session_start();
 require_once 'includes/db.php';
 
 
+
+
 header("Cache-Control: no-cache, no-store, must-revalidate");
 header("Pragma: no-cache");
 header("Expires: 0");
@@ -19,7 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt->execute([$username]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($user && $password === $user['password']) { // no hashing for demo
+    if ($user && password_verify($password, $user['password'])) {
+ // no hashing for demo
         $_SESSION['user'] = $user['username'];
         $_SESSION['role'] = $user['role']; // either 'admin' or 'user'
 

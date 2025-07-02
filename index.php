@@ -1,9 +1,17 @@
 <?php
 require_once 'includes/db.php';
 
+
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Cache-Control: post-check=0, pre-check=0", false);
+header("Pragma: no-cache");
+
+
 session_start();
-if (!isset($_SESSION['user'])) {
-    header("Location: login.php");
+
+// Redirect to login if not logged in or not user
+if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'user') {
+    header("Location: mainlogin.php");
     exit;
 }
 
@@ -319,5 +327,14 @@ function filterFAQs() {
         });
     });
 </script>
+
+<script>
+    // Prevent going back after logout
+    history.pushState(null, document.title, location.href);
+    window.addEventListener('popstate', function () {
+        history.pushState(null, document.title, location.href);
+    });
+</script>
+
 </body>
 </html>

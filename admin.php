@@ -1,16 +1,56 @@
 <?php
 
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Cache-Control: post-check=0, pre-check=0", false);
+header("Pragma: no-cache");
+
+
 require 'includes/db.php';
 
-session_start();
 if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'admin') {
     header("Location: mainlogin.php");
     exit;
 }
 
+
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $uploadPath = 'uploads/';
+
+    if ($_POST['action'] === 'create_user') {
+    $newUsername = $_POST['new_username'];
+    $newEmail = $_POST['new_email'];
+    $newPassword = password_hash($_POST['new_password'], PASSWORD_DEFAULT);
+    $newRole = $_POST['new_role'] ?? 'user';
+
+    $stmt = $pdo->prepare("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)");
+    $stmt->execute([$newUsername, $newEmail, $newPassword, $newRole]);
+
+    header("Location: admin.php?user_created=1");
+    exit;
+}
+
+
+    if ($_POST['action'] === 'create_user') {
+    $username = $_POST['new_username'];
+    $email = $_POST['new_email'];
+    $password = password_hash($_POST['new_password'], PASSWORD_DEFAULT);
+
+    $checkStmt = $pdo->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
+    $checkStmt->execute([$username, $email]);
+
+    if ($checkStmt->rowCount() === 0) {
+        $stmt = $pdo->prepare("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, 'user')");
+        $stmt->execute([$username, $email, $password]);
+        $_SESSION['notif'] = "User account created successfully!";
+    } else {
+        $_SESSION['notif'] = "Username or email already exists!";
+    }
+
+    header("Location: admin.php");
+    exit;
+}
+
     if (!file_exists($uploadPath)) {
         mkdir($uploadPath, 0777, true);
     }
@@ -336,6 +376,38 @@ $chartData = [
                     </form>
                 </div>
             </div>
+
+            <!-- Create New User Section -->
+<div class="admin-card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <i class="fas fa-user-plus"></i>
+            Create New User
+        </h2>
+    </div>
+    <div class="card-content">
+        <form method="post" class="add-user-form">
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-user"></i> Username</label>
+                <input type="text" name="new_username" class="modern-input" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-envelope"></i> Email</label>
+                <input type="email" name="new_email" class="modern-input" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-lock"></i> Password</label>
+                <input type="password" name="new_password" class="modern-input" required>
+            </div>
+            <input type="hidden" name="action" value="create_user">
+            <button type="submit" class="modern-btn primary">
+                <i class="fas fa-user-plus"></i>
+                <span>Create User</span>
+            </button>
+        </form>
+    </div>
+</div>
+
 
             <!-- Manage FAQs Section -->
             <div class="admin-card">
@@ -1182,6 +1254,16 @@ function removeAttachment(btn) {
             history.pushState(null, "", location.href);
         };
     </script>
+
+    <script>
+    history.pushState(null, "", location.href);
+    window.onpopstate = function () {
+        history.pushState(null, "", location.href);
+    };
+</script>
+
+
+
     
 </body>
 </html>
