@@ -2,29 +2,35 @@
 session_start();
 require_once 'includes/db.php';
 
-session_start();
-if (isset($_SESSION['user']) && $_SESSION['role'] === 'admin') {
-    header("Location: admin.php");
-    exit;
-} elseif (isset($_SESSION['user']) && $_SESSION['role'] === 'user') {
-    header("Location: index.php");
-    exit;
-}
+
+header("Cache-Control: no-cache, no-store, must-revalidate");
+header("Pragma: no-cache");
+header("Expires: 0");
+
+
+$error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = $_POST['username'];
-    $password = hash('sha256', $_POST['password']);
-    
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ? AND password = ?");
-    $stmt->execute([$username, $password]);
-    
-    if ($stmt->rowCount() === 1) {
-        $_SESSION['loggedin'] = true;
-        $_SESSION['user'] = $username;
-        header("Location: admin.php");
+    $password = $_POST['password']; // assume plaintext for demo purposes
+
+    // Fetch user from DB
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
+    $stmt->execute([$username]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($user && $password === $user['password']) { // no hashing for demo
+        $_SESSION['user'] = $user['username'];
+        $_SESSION['role'] = $user['role']; // either 'admin' or 'user'
+
+        if ($user['role'] === 'admin') {
+            header("Location: admin.php");
+        } else {
+            header("Location: index.php");
+        }
         exit;
     } else {
-        $error = "Invalid login credentials.";
+        $error = "Invalid username or password.";
     }
 }
 ?>
@@ -45,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="login-icon">
                     <i class="fas fa-shield-alt"></i>
                 </div>
-                <h1 class="login-title">Admin Login</h1>
+                <h1 class="login-title">Welcome to VFI-Support!</h1>
                 <p class="login-subtitle">Please sign in to your account</p>
             </div>
 
@@ -79,13 +85,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <i class="fas fa-arrow-right"></i>
                 </button>
             </form>
-
-            <div class="login-footer">
-                <a href="index.php" class="back-link">
-                    <i class="fas fa-arrow-left"></i>
-                    <span>Back to FAQs</span>
-                </a>
-            </div>
         </div>
 
         <img src="images/hotdog.png" alt="Hotdog" id="hotdog-float">
@@ -136,5 +135,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
         });
     </script>
-</body>
-</html>

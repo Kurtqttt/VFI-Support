@@ -1,46 +1,130 @@
 <?php
-require 'auth.php';
+
 require 'includes/db.php';
+
+session_start();
+if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'admin') {
+    header("Location: mainlogin.php");
+    exit;
+}
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $uploadPath = 'uploads/';
+    if (!file_exists($uploadPath)) {
+        mkdir($uploadPath, 0777, true);
+    }
+
+    // Handle File Upload
+    $filename = null;
+    if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] === UPLOAD_ERR_OK) {
+        $originalName = basename($_FILES['attachment']['name']);
+        $uniqueName = uniqid() . "_" . $originalName;
+        $targetPath = $uploadPath . $uniqueName;
+
+        if (move_uploaded_file($_FILES['attachment']['tmp_name'], $targetPath)) {
+            $filename = $targetPath;
+        }
+    }
+
     if ($_POST['action'] === 'add') {
         $q = $_POST['question'];
         $a = $_POST['answer'];
-        $status = $_POST['status'] ?? 'not solved';
-        $stmt = $pdo->prepare("INSERT INTO faqs (question, answer, status) VALUES (?, ?, ?)");
-        $stmt->execute([$q, $a, $status]);
+        $status = $_POST['status'] ?? 'not resolved';
+        $topic = $_POST['topic'] ?? 'Others';
+
+        $stmt = $pdo->prepare("INSERT INTO faqs (question, answer, status, topic, attachment) VALUES (?, ?, ?, ?, ?)");
+        $stmt->execute([$q, $a, $status, $topic, $filename]);
     }
-    
+
     if ($_POST['action'] === 'update') {
         $id = $_POST['id'];
         $q = $_POST['question'];
         $a = $_POST['answer'];
-        $s = $_POST['status'] ?? 'not solved';
-        $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ? WHERE id = ?");
-        $stmt->execute([$q, $a, $s, $id]);
+        $s = $_POST['status'] ?? 'not resolved';
+        $topic = $_POST['topic'] ?? 'Others';
+
+        if ($filename) {
+    // With new attachment
+    $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ?, attachment = ? WHERE id = ?");
+    $stmt->execute([$q, $a, $s, $topic, $filename, $id]);
+} else {
+    // Without new attachment
+    $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ? WHERE id = ?");
+    $stmt->execute([$q, $a, $s, $topic, $id]);
+}
+
     }
-    
+
     if ($_POST['action'] === 'delete') {
-        $id = $_POST['id'];
-        $stmt = $pdo->prepare("DELETE FROM faqs WHERE id = ?");
-        $stmt->execute([$id]);
+    $id = $_POST['id'];
+
+    // Get current FAQ
+    $stmt = $pdo->prepare("SELECT * FROM faqs WHERE id = ?");
+    $stmt->execute([$id]);
+    $faq = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($faq) {
+        // Insert into deleted_faqs
+        $deletedBy = $_SESSION['user'] ?? 'admin';
+        $insertStmt = $pdo->prepare("
+            INSERT INTO deleted_faqs (original_id, question, answer, status, topic, attachment, deleted_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ");
+        $insertStmt->execute([
+            $faq['id'],
+            $faq['question'],
+            $faq['answer'],
+            $faq['status'],
+            $faq['topic'],
+            $faq['attachment'] ?? '',
+            $deletedBy
+        ]);
+
+        // Delete from faqs
+        $deleteStmt = $pdo->prepare("DELETE FROM faqs WHERE id = ?");
+        $deleteStmt->execute([$id]);
     }
-    
+}
+
+if ($_POST['action'] === 'restore') {
+    $id = $_POST['id'];
+
+    // Get deleted FAQ from deleted_faqs
+    $stmt = $pdo->prepare("SELECT * FROM deleted_faqs WHERE id = ?");
+    $stmt->execute([$id]);
+    $faq = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($faq) {
+        // Insert back into faqs
+        $insert = $pdo->prepare("INSERT INTO faqs (question, answer, status, topic, attachment) VALUES (?, ?, ?, ?, ?)");
+        $insert->execute([
+            $faq['question'],
+            $faq['answer'],
+            $faq['status'],
+            $faq['topic'],
+            $faq['attachment']
+        ]);
+
+        // Remove from deleted_faqs
+        $delete = $pdo->prepare("DELETE FROM deleted_faqs WHERE id = ?");
+        $delete->execute([$id]);
+    }
+}
+
     header("Location: admin.php");
     exit;
 }
+
 
 // Load all FAQs
 $stmt = $pdo->query("SELECT * FROM faqs ORDER BY id DESC");
 $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Calculate statistics
+// Count stats
 $totalFaqs = count($faqs);
 $resolvedCount = 0;
 $unsolvedCount = 0;
-$monthlyStats = [];
-$statusStats = [];
 
 foreach ($faqs as $faq) {
     if ($faq['status'] === 'resolved') {
@@ -50,13 +134,17 @@ foreach ($faqs as $faq) {
     }
 }
 
-// Get monthly statistics (last 6 months)
+
+// Static deleted FAQs data (as requested)
+$deletedStmt = $pdo->query("SELECT * FROM deleted_faqs ORDER BY deleted_date DESC");
+$deletedFaqs = $deletedStmt->fetchAll(PDO::FETCH_ASSOC);
+
 $monthlyQuery = "
     SELECT 
         DATE_FORMAT(created_at, '%Y-%m') as month,
         COUNT(*) as count,
         SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved,
-        SUM(CASE WHEN status = 'not solved' THEN 1 ELSE 0 END) as unsolved
+        SUM(CASE WHEN status = 'not resolved' THEN 1 ELSE 0 END) as unsolved
     FROM faqs 
     WHERE created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
     GROUP BY DATE_FORMAT(created_at, '%Y-%m')
@@ -64,7 +152,9 @@ $monthlyQuery = "
     LIMIT 6
 ";
 
+
 try {
+    
     $monthlyStmt = $pdo->query($monthlyQuery);
     $monthlyStats = $monthlyStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
@@ -112,7 +202,7 @@ $chartData = [
                     </div>
                 </div>
                 <div class="admin-actions">
-                    <form method="get" action="logout.php" style="display: inline;">
+                    <form method="get" action="mainlogin.php" style="display: inline;">
                         <button type="submit" class="logout-btn">
                             <i class="fas fa-sign-out-alt"></i>
                             <span>Logout</span>
@@ -177,7 +267,7 @@ $chartData = [
                     </h2>
                 </div>
                 <div class="card-content">
-                    <form method="post" class="add-faq-form" id="addFaqForm">
+                    <form method="post" class="add-faq-form" id="addFaqForm" enctype="multipart/form-data">
                         <div class="form-group">
                             <label for="question" class="form-label">
                                 <i class="fas fa-question-circle"></i>
@@ -199,8 +289,43 @@ $chartData = [
                             </label>
                             <select name="status" class="modern-input" required>
                                 <option value="resolved">Resolved</option>
-                                <option value="not solved" selected>Not Solved</option>
+                                <option value="not resolved" selected>Unresolved</option>
                             </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="topic" class="form-label">
+                                <i class="fas fa-tags"></i> Topic
+                            </label>
+                            <select name="topic" id="topic" class="modern-input" required>
+                                <option value="Account Issues">Account Issues</option>
+                                <option value="Email Support">Email Support</option>
+                                <option value="Printer & Scanner">Printer & Scanner</option>
+                                <option value="Network & Internet">Network & Internet</option>
+                                <option value="Hardware Problems">Hardware Problems</option>
+                                <option value="Software Installation">Software Installation</option>
+                                <option value="System Access">System Access</option>
+                                <option value="Company Applications">Company Applications</option>
+                                <option value="Password & Login">Password & Login</option>
+                                <option value="Security & Policy">Security & Policy</option>
+                                <option value="Forms & Requests">Forms & Requests</option>
+                                <option value="IT Procedures">IT Procedures</option>
+                                <option value="Remote Access">Remote Access</option>
+                                <option value="Backup & Recovery">Backup & Recovery</option>
+                                <option value="User Guides">User Guides</option>
+                                <option value="Troubleshooting">Troubleshooting</option>
+                                <option value="Device Setup">Device Setup</option>
+                                <option value="File Sharing & Drives">File Sharing & Drives</option>
+                                <option value="IT Announcements">IT Announcements</option>
+                                <option value="Others">Others</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">
+                                <i class="fas fa-paperclip"></i> Upload Attachment (Image/File)
+                            </label>
+                            <input type="file" name="attachment" class="modern-input">
                         </div>
                         
                         <input type="hidden" name="action" value="add">
@@ -226,7 +351,30 @@ $chartData = [
                         <select id="adminStatusFilter" class="status-filter-dropdown" onchange="filterAdminFaqs()">
                             <option value="all">All Status</option>
                             <option value="resolved">Resolved</option>
-                            <option value="not solved">Unresolved</option>
+                            <option value="not resolved">Unresolved</option>
+                        </select>
+                        <select id="adminTopicFilter" class="status-filter-dropdown" onchange="filterFaqs()">
+                            <option value="all">All Topics</option>
+                            <option value="Account Issues">Account Issues</option>
+                            <option value="Email Support">Email Support</option>
+                            <option value="Printer & Scanner">Printer & Scanner</option>
+                            <option value="Network & Internet">Network & Internet</option>
+                            <option value="Hardware Problems">Hardware Problems</option>
+                            <option value="Software Installation">Software Installation</option>
+                            <option value="System Access">System Access</option>
+                            <option value="Company Applications">Company Applications</option>
+                            <option value="Password & Login">Password & Login</option>
+                            <option value="Security & Policy">Security & Policy</option>
+                            <option value="Forms & Requests">Forms & Requests</option>
+                            <option value="IT Procedures">IT Procedures</option>
+                            <option value="Remote Access">Remote Access</option>
+                            <option value="Backup & Recovery">Backup & Recovery</option>
+                            <option value="User Guides">User Guides</option>
+                            <option value="Troubleshooting">Troubleshooting</option>
+                            <option value="Device Setup">Device Setup</option>
+                            <option value="File Sharing & Drives">File Sharing & Drives</option>
+                            <option value="IT Announcements">IT Announcements</option>
+                            <option value="Others">Others</option>
                         </select>
                     </div>
                 </div>
@@ -241,7 +389,7 @@ $chartData = [
                             </div>
                         <?php else: ?>
                             <?php foreach ($faqs as $index => $faq): ?>
-                                <div class="faq-item" data-index="<?= $index ?>">
+                                <div class="faq-item" data-index="<?= $index ?>" data-topic="<?= htmlspecialchars($faq['topic']) ?>">
                                     <div class="faq-item-header">
                                         <span class="faq-number">#<?= $faq['id'] ?></span>
                                         <span class="status-badge <?= $faq['status'] === 'resolved' ? 'resolved' : 'unsolved' ?>">
@@ -258,7 +406,7 @@ $chartData = [
                                         </div>
                                     </div>
                                     
-                                    <form method="post" class="faq-form" id="faqForm<?= $index ?>">
+                                    <form method="post" class="faq-form" id="faqForm<?= $index ?>" enctype="multipart/form-data">
                                         <input type="hidden" name="id" value="<?= $faq['id'] ?>">
                                         
                                         <div class="form-group">
@@ -270,11 +418,57 @@ $chartData = [
                                             <label class="form-label">Details</label>
                                             <textarea name="answer" class="modern-textarea" readonly required><?= htmlspecialchars($faq['answer']) ?></textarea>
                                         </div>
+                                        
                                         <div class="form-group">
                                             <label class="form-label">Status</label>
                                             <select name="status" class="modern-input" required readonly>
                                                 <option value="resolved" <?= $faq['status'] === 'resolved' ? 'selected' : '' ?>>Resolved</option>
-                                                <option value="not solved" <?= $faq['status'] === 'not solved' ? 'selected' : '' ?>>Unresolved</option>
+                                                <option value="not resolved" <?= $faq['status'] === 'not resolved' ? 'selected' : '' ?>>Unresolved</option>
+                                            </select>
+                                        </div>
+
+                                        <?php if (!empty($faq['attachment'])): ?>
+    <div class="form-group current-attachment-wrapper">
+        <label class="form-label">Current Attachment:</label>
+        <div class="attachment-view">
+            <a href="<?= htmlspecialchars($faq['attachment']) ?>" target="_blank">View Current File</a>
+            <button type="button" class="close-attachment" onclick="removeAttachment(this)" title="Remove this file">
+                &times;
+            </button>
+        </div>
+        <input type="hidden" name="remove_existing_attachment" value="0">
+    </div>
+<?php endif; ?>
+
+
+                                        <div class="form-group">
+                                            <label class="form-label">Attached File:</label>
+                                            <input type="file" name="attachment" class="modern-input" <?= $faq['status'] !== 'not resolved' ? 'disabled' : '' ?>>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label class="form-label">Tag</label>
+                                            <select name="topic" class="modern-input" required readonly>
+                                                <option value="Account Issues" <?= $faq['topic'] === 'Account Issues' ? 'selected' : '' ?>>Account Issues</option>
+                                                <option value="Email Support" <?= $faq['topic'] === 'Email Support' ? 'selected' : '' ?>>Email Support</option>
+                                                <option value="Printer & Scanner" <?= $faq['topic'] === 'Printer & Scanner' ? 'selected' : '' ?>>Printer & Scanner</option>
+                                                <option value="Network & Internet" <?= $faq['topic'] === 'Network & Internet' ? 'selected' : '' ?>>Network & Internet</option>
+                                                <option value="Hardware Problems" <?= $faq['topic'] === 'Hardware Problems' ? 'selected' : '' ?>>Hardware Problems</option>
+                                                <option value="Software Installation" <?= $faq['topic'] === 'Software Installation' ? 'selected' : '' ?>>Software Installation</option>
+                                                <option value="System Access" <?= $faq['topic'] === 'System Access' ? 'selected' : '' ?>>System Access</option>
+                                                <option value="Company Applications" <?= $faq['topic'] === 'Company Applications' ? 'selected' : '' ?>>Company Applications</option>
+                                                <option value="Password & Login" <?= $faq['topic'] === 'Password & Login' ? 'selected' : '' ?>>Password & Login</option>
+                                                <option value="Security & Policy" <?= $faq['topic'] === 'Security & Policy' ? 'selected' : '' ?>>Security & Policy</option>
+                                                <option value="Forms & Requests" <?= $faq['topic'] === 'Forms & Requests' ? 'selected' : '' ?>>Forms & Requests</option>
+                                                <option value="IT Procedures" <?= $faq['topic'] === 'IT Procedures' ? 'selected' : '' ?>>IT Procedures</option>
+                                                <option value="Remote Access" <?= $faq['topic'] === 'Remote Access' ? 'selected' : '' ?>>Remote Access</option>
+                                                <option value="Backup & Recovery" <?= $faq['topic'] === 'Backup & Recovery' ? 'selected' : '' ?>>Backup & Recovery</option>
+                                                <option value="User Guides" <?= $faq['topic'] === 'User Guides' ? 'selected' : '' ?>>User Guides</option>
+                                                <option value="Troubleshooting" <?= $faq['topic'] === 'Troubleshooting' ? 'selected' : '' ?>>Troubleshooting</option>
+                                                <option value="Device Setup" <?= $faq['topic'] === 'Device Setup' ? 'selected' : '' ?>>Device Setup</option>
+                                                <option value="File Sharing & Drives" <?= $faq['topic'] === 'File Sharing & Drives' ? 'selected' : '' ?>>File Sharing & Drives</option>
+                                                <option value="IT Announcements" <?= $faq['topic'] === 'IT Announcements' ? 'selected' : '' ?>>IT Announcements</option>
+                                                <option value="Others" <?= $faq['topic'] === 'Others' ? 'selected' : '' ?>>Others</option>
                                             </select>
                                         </div>
                                         
@@ -292,6 +486,123 @@ $chartData = [
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NEW: Deleted FAQs Section -->
+            <div class="admin-card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <i class="fas fa-trash-restore"></i>
+                        Deleted FAQs
+                        <span class="faq-count">(<?= count($deletedFaqs) ?> items)</span>
+                    </h2>
+                    <div class="search-wrapper">
+                        <i class="fas fa-search search-icon"></i>
+                        <input type="text" id="deletedSearch" class="search-input" placeholder="Search deleted FAQs...">
+                        <select id="deletedStatusFilter" class="status-filter-dropdown" onchange="filterDeletedFaqs()">
+                            <option value="all">All Status</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="not resolved">Unresolved</option>
+                        </select>
+                        <select id="deletedTopicFilter" class="status-filter-dropdown" onchange="filterDeletedFaqs()">
+                            <option value="all">All Topics</option>
+                            <option value="Account Issues">Account Issues</option>
+                            <option value="Email Support">Email Support</option>
+                            <option value="Printer & Scanner">Printer & Scanner</option>
+                            <option value="Network & Internet">Network & Internet</option>
+                            <option value="Hardware Problems">Hardware Problems</option>
+                            <option value="Software Installation">Software Installation</option>
+                            <option value="System Access">System Access</option>
+                            <option value="Company Applications">Company Applications</option>
+                            <option value="Password & Login">Password & Login</option>
+                            <option value="Security & Policy">Security & Policy</option>
+                            <option value="Forms & Requests">Forms & Requests</option>
+                            <option value="IT Procedures">IT Procedures</option>
+                            <option value="Remote Access">Remote Access</option>
+                            <option value="Backup & Recovery">Backup & Recovery</option>
+                            <option value="User Guides">User Guides</option>
+                            <option value="Troubleshooting">Troubleshooting</option>
+                            <option value="Device Setup">Device Setup</option>
+                            <option value="File Sharing & Drives">File Sharing & Drives</option>
+                            <option value="IT Announcements">IT Announcements</option>
+                            <option value="Others">Others</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="card-content">
+                    <div class="deleted-faqs-table-wrapper">
+                        <table class="deleted-faqs-table" id="deletedFaqsTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Question</th>
+                                    <th>Answer</th>
+                                    <th>Status</th>
+                                    <th>Topic</th>
+                                    <th>Deleted Date</th>
+                                    <th>Deleted By</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="deletedFaqsBody">
+                                <?php if (empty($deletedFaqs)): ?>
+                                    <tr>
+                                        <td colspan="8" class="empty-state-row">
+                                            <div class="empty-state">
+                                                <i class="fas fa-inbox"></i>
+                                                <h3>No Deleted FAQs</h3>
+                                                <p>No FAQs have been deleted yet.</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php else: ?>
+                                    <?php foreach ($deletedFaqs as $index => $deletedFaq): ?>
+                                        <tr class="deleted-faq-row" 
+                                            data-status="<?= strtolower($deletedFaq['status']) ?>"
+                                            data-topic="<?= htmlspecialchars($deletedFaq['topic']) ?>">
+                                            <td class="faq-id-cell">#<?= $deletedFaq['id'] ?></td>
+                                            <td class="question-cell">
+                                                <div class="question-content">
+                                                    <?= htmlspecialchars($deletedFaq['question']) ?>
+                                                </div>
+                                            </td>
+                                            <td class="answer-cell">
+                                                <div class="answer-content">
+                                                    <?= htmlspecialchars(mb_strimwidth($deletedFaq['answer'], 0, 100, '...')) ?>
+                                                </div>
+                                            </td>
+                                            <td class="status-cell">
+                                                <span class="status-badge <?= $deletedFaq['status'] === 'resolved' ? 'resolved' : 'unsolved' ?>">
+                                                    <i class="fas <?= $deletedFaq['status'] === 'resolved' ? 'fa-check-circle' : 'fa-exclamation-circle' ?>"></i>
+                                                    <?= ucfirst(str_replace('_', ' ', $deletedFaq['status'])) ?>
+                                                </span>
+                                            </td>
+                                            <td class="topic-cell">
+                                                <span class="faq-tag"><?= htmlspecialchars($deletedFaq['topic']) ?></span>
+                                            </td>
+                                            <td class="date-cell"><?= date('M d, Y', strtotime($deletedFaq['deleted_date'])) ?></td>
+                                            <td class="user-cell"><?= htmlspecialchars($deletedFaq['deleted_by']) ?></td>
+                                            <td class="actions-cell">
+                                                <div class="table-actions">
+                                                    <button type="button" class="action-btn restore" title="Restore FAQ" onclick="restoreFaq(<?= $deletedFaq['id'] ?>)">
+    <i class="fas fa-undo"></i>
+</button>
+
+                                                    <button type="button" class="action-btn view" 
+                                                            onclick="viewDeletedFaq('<?= htmlspecialchars($deletedFaq['question'], ENT_QUOTES) ?>', '<?= htmlspecialchars($deletedFaq['answer'], ENT_QUOTES) ?>')" 
+                                                            title="View Full Content">
+                                                        <i class="fas fa-eye"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -338,6 +649,37 @@ $chartData = [
                 <button class="modern-btn danger" onclick="deleteFaq()">
                     <i class="fas fa-trash"></i>
                     <span>Delete FAQ</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Deleted FAQ Modal -->
+    <div id="viewDeletedModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <i class="fas fa-eye"></i>
+                    <span>Deleted FAQ Details</span>
+                </h3>
+                <button class="close-modal" onclick="closeViewDeletedModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="deleted-faq-details">
+                    <div class="detail-group">
+                        <label class="detail-label">Question:</label>
+                        <div class="detail-content" id="viewDeletedQuestion"></div>
+                    </div>
+                    <div class="detail-group">
+                        <label class="detail-label">Answer:</label>
+                        <div class="detail-content" id="viewDeletedAnswer"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="modern-btn secondary" onclick="closeViewDeletedModal()">
+                    <i class="fas fa-times"></i>
+                    <span>Close</span>
                 </button>
             </div>
         </div>
@@ -440,6 +782,7 @@ $chartData = [
         function filterFaqs() {
             const query = document.getElementById('adminSearch').value.toLowerCase();
             const selectedStatus = document.getElementById('adminStatusFilter')?.value || 'all';
+            const selectedTopic = document.getElementById('adminTopicFilter')?.value || 'all';
             const faqs = document.querySelectorAll('.faq-item');
             let visibleCount = 0;
 
@@ -447,10 +790,13 @@ $chartData = [
                 const question = faq.querySelector('input[name="question"]').value.toLowerCase();
                 const answer = faq.querySelector('textarea[name="answer"]').value.toLowerCase();
                 const status = faq.querySelector('select[name="status"]').value;
+                const topic = faq.getAttribute('data-topic') || '';
+                
                 const matchesQuery = question.includes(query) || answer.includes(query);
-                const matchesStatus = selectedStatus === 'all' || status === selectedStatus;
+                const matchesStatus = (selectedStatus === 'all' || status === selectedStatus);
+                const matchesTopic = (selectedTopic === 'all' || topic === selectedTopic);
 
-                if (matchesQuery && matchesStatus) {
+                if (matchesQuery && matchesStatus && matchesTopic) {
                     faq.style.display = 'block';
                     visibleCount++;
                 } else {
@@ -464,7 +810,47 @@ $chartData = [
             }
         }
 
-        // Search bar listener
+        // NEW: Filter deleted FAQs
+        function filterDeletedFaqs() {
+            const query = document.getElementById('deletedSearch').value.toLowerCase();
+            const selectedStatus = document.getElementById('deletedStatusFilter')?.value || 'all';
+            const selectedTopic = document.getElementById('deletedTopicFilter')?.value || 'all';
+            const rows = document.querySelectorAll('.deleted-faq-row');
+            let visibleCount = 0;
+
+            rows.forEach(row => {
+                const question = row.querySelector('.question-content').textContent.toLowerCase();
+                const answer = row.querySelector('.answer-content').textContent.toLowerCase();
+                const status = row.getAttribute('data-status');
+                const topic = row.getAttribute('data-topic') || '';
+                
+                const matchesQuery = question.includes(query) || answer.includes(query);
+                const matchesStatus = (selectedStatus === 'all' || status === selectedStatus);
+                const matchesTopic = (selectedTopic === 'all' || topic === selectedTopic);
+
+                if (matchesQuery && matchesStatus && matchesTopic) {
+                    row.style.display = 'table-row';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        // NEW: View deleted FAQ details
+        function viewDeletedFaq(question, answer) {
+            document.getElementById('viewDeletedQuestion').textContent = question;
+            document.getElementById('viewDeletedAnswer').textContent = answer;
+            document.getElementById('viewDeletedModal').style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeViewDeletedModal() {
+            document.getElementById('viewDeletedModal').style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+
+        // Search bar listeners
         document.getElementById('adminSearch').addEventListener('input', () => {
             filterFaqs();
             const searchIcon = document.querySelector('.search-icon');
@@ -474,8 +860,20 @@ $chartData = [
             }, 300);
         });
 
-        // Dropdown filter listener
+        // NEW: Deleted FAQs search listener
+        document.getElementById('deletedSearch').addEventListener('input', () => {
+            filterDeletedFaqs();
+            const searchIcon = document.querySelector('.search-icon');
+            searchIcon.classList.add('fa-spin');
+            setTimeout(() => {
+                searchIcon.classList.remove('fa-spin');
+            }, 300);
+        });
+
+        // Dropdown filter listeners
         document.getElementById('adminStatusFilter').addEventListener('change', filterFaqs);
+        document.getElementById('deletedStatusFilter').addEventListener('change', filterDeletedFaqs);
+        document.getElementById('deletedTopicFilter').addEventListener('change', filterDeletedFaqs);
 
         // Edit mode functions
         function toggleEdit(index) {
@@ -722,8 +1120,10 @@ $chartData = [
         window.addEventListener('click', function(e) {
             const deleteModal = document.getElementById('deleteModal');
             const statsModal = document.getElementById('statsModal');
+            const viewDeletedModal = document.getElementById('viewDeletedModal');
             if (e.target === deleteModal) closeDeleteModal();
             if (e.target === statsModal) closeStatsModal();
+            if (e.target === viewDeletedModal) closeViewDeletedModal();
         });
 
         // Close modals with Escape
@@ -731,6 +1131,7 @@ $chartData = [
             if (e.key === 'Escape') {
                 closeDeleteModal();
                 closeStatsModal();
+                closeViewDeletedModal();
             }
         });
 
@@ -741,6 +1142,46 @@ $chartData = [
                 this.style.height = this.scrollHeight + 'px';
             });
         });
+        function restoreFaq(id) {
+    if (confirm("Are you sure you want to restore this FAQ?")) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.style.display = 'none';
+        form.innerHTML = `
+            <input type="hidden" name="action" value="restore">
+            <input type="hidden" name="id" value="${id}">
+        `;
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function removeAttachment(btn) {
+    const wrapper = btn.closest('.current-attachment-wrapper');
+    const fileInput = wrapper.parentElement.querySelector('input[type="file"]');
+    const hiddenInput = wrapper.querySelector('input[name="remove_existing_attachment"]');
+
+    // Remove the current display
+    wrapper.remove();
+
+    // Mark that the current attachment should be removed
+    if (hiddenInput) hiddenInput.value = "1";
+
+    // Enable the file input
+    if (fileInput) {
+        fileInput.disabled = false;
+        fileInput.style.display = "block";
+    }
+}
+
+
     </script>
+    <script>
+        history.pushState(null, "", location.href);
+        window.onpopstate = function () {
+            history.pushState(null, "", location.href);
+        };
+    </script>
+    
 </body>
 </html>
