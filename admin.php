@@ -9,7 +9,7 @@ header("Pragma: no-cache");
 require 'includes/db.php';
 
 if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'admin') {
-    header("Location: mainlogin.php");
+    header("Location: index.php");
     exit;
 }
 
@@ -243,7 +243,7 @@ $chartData = [
                     </div>
                 </div>
                 <div class="admin-actions">
-                    <form method="get" action="mainlogin.php" style="display: inline;">
+                    <form method="get" action="index.php" style="display: inline;">
                         <button type="submit" class="logout-btn">
                             <i class="fas fa-sign-out-alt"></i>
                             <span>Logout</span>
