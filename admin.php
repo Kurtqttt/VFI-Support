@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['notif'] = "Username or email already exists!";
     }
 
-    header("Location: admin.php");
+    header("Location: pages/admin.php");
     exit;
 }
 
