@@ -1,12 +1,17 @@
 <?php
 session_start();
 
+require 'includes/db.php';
+
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Cache-Control: post-check=0, pre-check=0", false);
 header("Pragma: no-cache");
 
 
-require 'includes/db.php';
+// Fetch all users (except admin himself if needed)
+$userStmt = $pdo->query("SELECT * FROM users");
+$allUsers = $userStmt->fetchAll(PDO::FETCH_ASSOC);
+
 
 if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'admin') {
     header("Location: index.php");
@@ -18,37 +23,98 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'admin') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $uploadPath = 'uploads/';
 
+    // CREATE user
     if ($_POST['action'] === 'create_user') {
-    $newUsername = $_POST['new_username'];
-    $newEmail = $_POST['new_email'];
-    $newPassword = password_hash($_POST['new_password'], PASSWORD_DEFAULT);
-    $newRole = $_POST['new_role'] ?? 'user';
+        $newUsername = $_POST['new_username'];
+        $newEmail = $_POST['new_email'];
+        $newPassword = password_hash($_POST['new_password'], PASSWORD_DEFAULT);
+        $newRole = $_POST['new_role'] ?? 'user';
 
-    $stmt = $pdo->prepare("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)");
-    $stmt->execute([$newUsername, $newEmail, $newPassword, $newRole]);
+        $stmt = $pdo->prepare("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)");
+        $stmt->execute([$newUsername, $newEmail, $newPassword, $newRole]);
 
-    header("Location: admin.php?user_created=1");
+        header("Location: admin.php?user_created=1");
+        exit;
+    }
+
+    // UPDATE user
+    if ($_POST['action'] === 'update_user') {
+        $id = $_POST['update_user_id'];
+        $username = $_POST['username'];
+        $email = $_POST['email'];
+        $role = $_POST['role'];
+        $password = $_POST['password'];
+
+        if (!empty($password)) {
+            $hashed = password_hash($password, PASSWORD_DEFAULT);
+            $stmt = $pdo->prepare("UPDATE users SET username = ?, email = ?, password = ?, role = ? WHERE id = ?");
+            $stmt->execute([$username, $email, $hashed, $role, $id]);
+        } else {
+            $stmt = $pdo->prepare("UPDATE users SET username = ?, email = ?, role = ? WHERE id = ?");
+            $stmt->execute([$username, $email, $role, $id]);
+        }
+
+        header("Location: admin.php?user_updated=1");
+        exit;
+    }
+
+    if ($_POST['action'] === 'update_admin_faq') {
+    $id = $_POST['id'];
+    $q = $_POST['question'];
+    $a = $_POST['answer'];
+    $s = $_POST['status'];
+    $topic = $_POST['topic'];
+
+    $stmt = $pdo->prepare("UPDATE admin_faqs SET question = ?, answer = ?, status = ?, topic = ? WHERE id = ?");
+    $stmt->execute([$q, $a, $s, $topic, $id]);
+
+    header("Location: admin.php");
     exit;
 }
 
+if ($_POST['action'] === 'delete_admin_faq') {
+    $id = $_POST['id'];
 
-    if ($_POST['action'] === 'create_user') {
-    $username = $_POST['new_username'];
-    $email = $_POST['new_email'];
-    $password = password_hash($_POST['new_password'], PASSWORD_DEFAULT);
+    // Get the current admin FAQ
+    $stmt = $pdo->prepare("SELECT * FROM admin_faqs WHERE id = ?");
+    $stmt->execute([$id]);
+    $faq = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    $checkStmt = $pdo->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
-    $checkStmt->execute([$username, $email]);
+    if ($faq) {
+        $deletedBy = $_SESSION['user'] ?? 'admin';
 
-    if ($checkStmt->rowCount() === 0) {
-        $stmt = $pdo->prepare("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, 'user')");
-        $stmt->execute([$username, $email, $password]);
-        $_SESSION['notif'] = "User account created successfully!";
-    } else {
-        $_SESSION['notif'] = "Username or email already exists!";
+        // Insert into deleted_faqs table
+        $insertStmt = $pdo->prepare("
+            INSERT INTO deleted_faqs (original_id, question, answer, status, topic, attachment, deleted_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ");
+        $insertStmt->execute([
+            $faq['id'],
+            $faq['question'],
+            $faq['answer'],
+            $faq['status'],
+            $faq['topic'],
+            $faq['attachment'] ?? '',
+            $deletedBy
+        ]);
+
+        // Delete from admin_faqs
+        $deleteStmt = $pdo->prepare("DELETE FROM admin_faqs WHERE id = ?");
+        $deleteStmt->execute([$id]);
     }
+}
 
-    header("Location: pages/admin.php");
+    // DELETE user
+    if ($_POST['action'] === 'delete_user') {
+        $deleteId = $_POST['delete_user_id'];
+
+        // Optional: Prevent deleting own account
+        if ($_SESSION['user_id'] != $deleteId) {
+            $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
+            $stmt->execute([$deleteId]);
+        }
+
+    header("Location: admin.php");
     exit;
 }
 
@@ -69,14 +135,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($_POST['action'] === 'add') {
-        $q = $_POST['question'];
-        $a = $_POST['answer'];
-        $status = $_POST['status'] ?? 'not resolved';
-        $topic = $_POST['topic'] ?? 'Others';
+    $q = $_POST['question'];
+    $a = $_POST['answer'];
+    $status = $_POST['status'] ?? 'not resolved';
+    $topic = $_POST['topic'] ?? 'Others';
+    $audience = $_POST['target_audience'] ?? 'user';
 
+    if ($audience === 'admin') {
+        $stmt = $pdo->prepare("INSERT INTO admin_faqs (question, answer, status, topic, attachment) VALUES (?, ?, ?, ?, ?)");
+    } else {
         $stmt = $pdo->prepare("INSERT INTO faqs (question, answer, status, topic, attachment) VALUES (?, ?, ?, ?, ?)");
-        $stmt->execute([$q, $a, $status, $topic, $filename]);
     }
+
+    $stmt->execute([$q, $a, $status, $topic, $filename]);
+}
+
 
     if ($_POST['action'] === 'update') {
         $id = $_POST['id'];
@@ -335,6 +408,16 @@ $chartData = [
                         </div>
 
                         <div class="form-group">
+                            <label for="target_audience" class="form-label">
+                                <i class="fas fa-user-cog"></i> Target Audience
+                            </label>
+                            <select name="target_audience" id="target_audience" class="modern-input" required>
+                                <option value="user" selected>User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
                             <label for="topic" class="form-label">
                                 <i class="fas fa-tags"></i> Topic
                             </label>
@@ -379,36 +462,35 @@ $chartData = [
             </div>
 
             <!-- Create New User Section -->
-<div class="admin-card">
-    <div class="card-header">
-        <h2 class="card-title">
-            <i class="fas fa-user-plus"></i>
-            Create New User
-        </h2>
-    </div>
-    <div class="card-content">
-        <form method="post" class="add-user-form">
-            <div class="form-group">
-                <label class="form-label"><i class="fas fa-user"></i> Username</label>
-                <input type="text" name="new_username" class="modern-input" required>
+            <div class="admin-card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <i class="fas fa-user-plus"></i>
+                        Create New User
+                    </h2>
+                </div>
+                <div class="card-content">
+                    <form method="post" class="add-user-form">
+                        <div class="form-group">
+                            <label class="form-label"><i class="fas fa-user"></i> Username</label>
+                            <input type="text" name="new_username" class="modern-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label"><i class="fas fa-envelope"></i> Email</label>
+                            <input type="email" name="new_email" class="modern-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label"><i class="fas fa-lock"></i> Password</label>
+                            <input type="password" name="new_password" class="modern-input" required>
+                        </div>
+                        <input type="hidden" name="action" value="create_user">
+                        <button type="submit" class="modern-btn primary">
+                            <i class="fas fa-user-plus"></i>
+                            <span>Create User</span>
+                        </button>
+                    </form>
+                </div>
             </div>
-            <div class="form-group">
-                <label class="form-label"><i class="fas fa-envelope"></i> Email</label>
-                <input type="email" name="new_email" class="modern-input" required>
-            </div>
-            <div class="form-group">
-                <label class="form-label"><i class="fas fa-lock"></i> Password</label>
-                <input type="password" name="new_password" class="modern-input" required>
-            </div>
-            <input type="hidden" name="action" value="create_user">
-            <button type="submit" class="modern-btn primary">
-                <i class="fas fa-user-plus"></i>
-                <span>Create User</span>
-            </button>
-        </form>
-    </div>
-</div>
-
 
             <!-- Manage FAQs Section -->
             <div class="admin-card">
@@ -501,17 +583,17 @@ $chartData = [
                                         </div>
 
                                         <?php if (!empty($faq['attachment'])): ?>
-    <div class="form-group current-attachment-wrapper">
-        <label class="form-label">Current Attachment:</label>
-        <div class="attachment-view">
-            <a href="<?= htmlspecialchars($faq['attachment']) ?>" target="_blank">View Current File</a>
-            <button type="button" class="close-attachment" onclick="removeAttachment(this)" title="Remove this file">
-                &times;
-            </button>
-        </div>
-        <input type="hidden" name="remove_existing_attachment" value="0">
-    </div>
-<?php endif; ?>
+                                            <div class="form-group current-attachment-wrapper">
+                                                <label class="form-label">Current Attachment:</label>
+                                                <div class="attachment-view">
+                                                    <a href="<?= htmlspecialchars($faq['attachment']) ?>" target="_blank">View Current File</a>
+                                                    <button type="button" class="close-attachment" onclick="removeAttachment(this)" title="Remove this file">
+                                                        &times;
+                                                    </button>
+                                                </div>
+                                                <input type="hidden" name="remove_existing_attachment" value="0">
+                                            </div>
+                                        <?php endif; ?>
 
 
                                         <div class="form-group">
@@ -563,16 +645,173 @@ $chartData = [
                 </div>
             </div>
 
-            <!-- NEW: Deleted FAQs Section -->
+            <!-- Admin-Only FAQs -->
             <div class="admin-card">
                 <div class="card-header">
-                    <h2 class="card-title">
-                        <i class="fas fa-trash-restore"></i>
-                        Deleted FAQs
-                        <span class="faq-count">(<?= count($deletedFaqs) ?> items)</span>
-                    </h2>
-                    <div class="search-wrapper">
-                        <i class="fas fa-search search-icon"></i>
+                    <h2><i class="fas fa-user-shield"></i> Admin FAQs</h2>
+                </div>
+                <div class="card-content">
+                <?php
+                $adminFaqs = $pdo->query("SELECT * FROM admin_faqs ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
+                if (empty($adminFaqs)): ?>
+                    <div class="empty-state">
+                        <i class="fas fa-inbox"></i>
+                        <h3>No Admin FAQs Yet</h3>
+                    </div>
+                <?php else: ?>
+                <?php foreach ($adminFaqs as $index => $faq): ?>
+                <div class="faq-item" data-index="<?= $index ?>">
+                    <div class="faq-item-header">
+                        <span class="faq-number">#<?= $faq['id'] ?></span>
+                        <span class="status-badge <?= $faq['status'] === 'resolved' ? 'resolved' : 'unsolved' ?>">
+                            <i class="fas <?= $faq['status'] === 'resolved' ? 'fa-check-circle' : 'fa-exclamation-circle' ?>"></i>
+                            <?= ucfirst($faq['status']) ?>
+                        </span>
+                        <div class="faq-actions">
+                            <button type="button" class="action-btn edit" onclick="toggleEditAdmin(<?= $index ?>)">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button type="button" class="action-btn delete" onclick="confirmDeleteAdminFaq(<?= $faq['id'] ?>, '<?= htmlspecialchars($faq['question'], ENT_QUOTES) ?>')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <form method="post" class="faq-form" id="adminFaqForm<?= $index ?>" enctype="multipart/form-data">
+                        <input type="hidden" name="id" value="<?= $faq['id'] ?>">
+                        <input type="hidden" name="action" value="update_admin_faq">
+
+                    <div class="form-group">
+                        <label class="form-label">Question</label>
+                        <input type="text" name="question" value="<?= htmlspecialchars($faq['question']) ?>" class="modern-input" readonly required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Answer</label>
+                        <textarea name="answer" class="modern-textarea" readonly required><?= htmlspecialchars($faq['answer']) ?></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Status</label>
+                        <select name="status" class="modern-input" disabled required>
+                            <option value="resolved" <?= $faq['status'] === 'resolved' ? 'selected' : '' ?>>Resolved</option>
+                            <option value="not resolved" <?= $faq['status'] === 'not resolved' ? 'selected' : '' ?>>Unresolved</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Topic</label>
+                        <select name="topic" class="modern-input" required disabled>
+                        <option value="Account Issues" <?= $faq['topic'] === 'Account Issues' ? 'selected' : '' ?>>Account Issues</option>
+                        <option value="Email Support" <?= $faq['topic'] === 'Email Support' ? 'selected' : '' ?>>Email Support</option>
+                        <option value="Printer & Scanner" <?= $faq['topic'] === 'Printer & Scanner' ? 'selected' : '' ?>>Printer & Scanner</option>
+                        <option value="Network & Internet" <?= $faq['topic'] === 'Network & Internet' ? 'selected' : '' ?>>Network & Internet</option>
+                        <option value="Hardware Problems" <?= $faq['topic'] === 'Hardware Problems' ? 'selected' : '' ?>>Hardware Problems</option>
+                        <option value="Software Installation" <?= $faq['topic'] === 'Software Installation' ? 'selected' : '' ?>>Software Installation</option>
+                        <option value="System Access" <?= $faq['topic'] === 'System Access' ? 'selected' : '' ?>>System Access</option>
+                        <option value="Company Applications" <?= $faq['topic'] === 'Company Applications' ? 'selected' : '' ?>>Company Applications</option>
+                        <option value="Password & Login" <?= $faq['topic'] === 'Password & Login' ? 'selected' : '' ?>>Password & Login</option>
+                        <option value="Security & Policy" <?= $faq['topic'] === 'Security & Policy' ? 'selected' : '' ?>>Security & Policy</option>
+                        <option value="Forms & Requests" <?= $faq['topic'] === 'Forms & Requests' ? 'selected' : '' ?>>Forms & Requests</option>
+                        <option value="IT Procedures" <?= $faq['topic'] === 'IT Procedures' ? 'selected' : '' ?>>IT Procedures</option>
+                        <option value="Remote Access" <?= $faq['topic'] === 'Remote Access' ? 'selected' : '' ?>>Remote Access</option>
+                        <option value="Backup & Recovery" <?= $faq['topic'] === 'Backup & Recovery' ? 'selected' : '' ?>>Backup & Recovery</option>
+                        <option value="User Guides" <?= $faq['topic'] === 'User Guides' ? 'selected' : '' ?>>User Guides</option>
+                        <option value="Troubleshooting" <?= $faq['topic'] === 'Troubleshooting' ? 'selected' : '' ?>>Troubleshooting</option>
+                        <option value="Device Setup" <?= $faq['topic'] === 'Device Setup' ? 'selected' : '' ?>>Device Setup</option>
+                        <option value="File Sharing & Drives" <?= $faq['topic'] === 'File Sharing & Drives' ? 'selected' : '' ?>>File Sharing & Drives</option>
+                        <option value="IT Announcements" <?= $faq['topic'] === 'IT Announcements' ? 'selected' : '' ?>>IT Announcements</option>
+                        <option value="Others" <?= $faq['topic'] === 'Others' ? 'selected' : '' ?>>Others</option>
+                    </select>
+                 </div>
+
+                <?php if (!empty($faq['attachment'])): ?>
+                    <div class="form-group">
+                        <label class="form-label">Attachment:</label>
+                        <p><a href="<?= $faq['attachment'] ?>" target="_blank">View File</a></p>
+                    </div>
+                <?php endif; ?>
+
+                <div class="form-actions" style="display: none;">
+                    <button type="submit" class="modern-btn success">
+                        <i class="fas fa-save"></i> <span>Update</span>
+                    </button>
+                    <button type="button" class="modern-btn secondary" onclick="cancelEditAdmin(<?= $index ?>)">
+                        <i class="fas fa-times"></i> <span>Cancel</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    <?php endforeach; ?>
+    <?php endif; ?>
+    </div>
+</div>
+
+<div class="admin-card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <i class="fas fa-users-cog"></i> Manage Users
+        </h2>
+    </div>
+
+    <div class="card-content">
+        <table class="deleted-faqs-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Password</th>
+                    <th>Role</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($allUsers as $user): ?>
+                    <tr>
+                        <form method="POST">
+                            <td><?= $user['id'] ?></td>
+                            <td>
+                                <input type="text" name="username" value="<?= htmlspecialchars($user['username']) ?>" required>
+                            </td>
+                            <td>
+                                <input type="email" name="email" value="<?= htmlspecialchars($user['email']) ?>" required>
+                            </td>
+                            <td>
+                                <input type="password" name="password" placeholder="New Password">
+                            </td>
+                            <td>
+                                <select name="role">
+                                    <option value="admin" <?= $user['role'] === 'admin' ? 'selected' : '' ?>>Admin</option>
+                                    <option value="user" <?= $user['role'] === 'user' ? 'selected' : '' ?>>User</option>
+                                </select>
+                            </td>
+                            <td>
+                                <input type="hidden" name="update_user_id" value="<?= $user['id'] ?>">
+                                <button type="submit" class="modern-btn success" name="action" value="update_user">
+                                    <i class="fas fa-save"></i>
+                                </button>
+                            </td>
+                            
+                        </form>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+
+<!-- NEW: Deleted FAQs Section -->
+    <div class="admin-card">
+        <div class="card-header">
+            <h2 class="card-title">
+                <i class="fas fa-trash-restore"></i>
+                    Deleted FAQs
+                <span class="faq-count">(<?= count($deletedFaqs) ?> items)</span>
+            </h2>
+                <div class="search-wrapper">
+                    <i class="fas fa-search search-icon"></i>
                         <input type="text" id="deletedSearch" class="search-input" placeholder="Search deleted FAQs...">
                         <select id="deletedStatusFilter" class="status-filter-dropdown" onchange="filterDeletedFaqs()">
                             <option value="all">All Status</option>
@@ -661,8 +900,8 @@ $chartData = [
                                             <td class="actions-cell">
                                                 <div class="table-actions">
                                                     <button type="button" class="action-btn restore" title="Restore FAQ" onclick="restoreFaq(<?= $deletedFaq['id'] ?>)">
-    <i class="fas fa-undo"></i>
-</button>
+                                                        <i class="fas fa-undo"></i>
+                                                    </button>
 
                                                     <button type="button" class="action-btn view" 
                                                             onclick="viewDeletedFaq('<?= htmlspecialchars($deletedFaq['question'], ENT_QUOTES) ?>', '<?= htmlspecialchars($deletedFaq['answer'], ENT_QUOTES) ?>')" 
@@ -688,6 +927,34 @@ $chartData = [
             <div class="floating-shape shape-4"></div>
         </div>
     </div>
+
+    <!-- View Deleted Admin FAQ Modal -->
+    <div id="viewDeletedAdminModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-eye"></i> Deleted Admin FAQ Details</h3>
+            <button class="close-modal" onclick="closeViewDeletedAdminModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="deleted-faq-details">
+                <div class="detail-group">
+                    <label class="detail-label">Question:</label>
+                    <div class="detail-content" id="adminDeletedQuestion"></div>
+                </div>
+                <div class="detail-group">
+                    <label class="detail-label">Answer:</label>
+                    <div class="detail-content" id="adminDeletedAnswer"></div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="modern-btn secondary" onclick="closeViewDeletedAdminModal()">
+                <i class="fas fa-times"></i>
+                <span>Close</span>
+            </button>
+        </div>
+    </div>
+</div>
 
     <!-- Delete Confirmation Modal -->
     <div id="deleteModal" class="modal">
@@ -1247,24 +1514,69 @@ function removeAttachment(btn) {
     }
 }
 
+function toggleEditAdmin(index) {
+    const form = document.getElementById(`adminFaqForm${index}`);
+    const inputs = form.querySelectorAll('input[type="text"], textarea');
+    const selects = form.querySelectorAll('select');
+    const actions = form.querySelector('.form-actions');
+    const editBtn = form.closest('.faq-item').querySelector('.edit');
 
-    </script>
-    <script>
-        history.pushState(null, "", location.href);
-        window.onpopstate = function () {
-            history.pushState(null, "", location.href);
-        };
-    </script>
+    inputs.forEach(input => {
+        input.readOnly = false;
+        input.classList.add('editing');
+    });
 
-    <script>
+    selects.forEach(select => {
+        select.disabled = false;
+        select.classList.add('editing');
+    });
+
+    actions.style.display = 'flex';
+    editBtn.innerHTML = '<i class="fas fa-eye"></i>';
+    editBtn.onclick = () => cancelEditAdmin(index);
+}
+
+function cancelEditAdmin(index) {
+    location.reload(); // Simple reload is easiest for now
+}
+
+function confirmDeleteAdminFaq(id, question) {
+    if (confirm(`Are you sure you want to delete the Admin FAQ: "${question}"?`)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.innerHTML = `
+            <input type="hidden" name="action" value="delete_admin_faq">
+            <input type="hidden" name="id" value="${id}">
+        `;
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function viewDeletedAdminFaq(question, answer) {
+    document.getElementById('adminDeletedQuestion').textContent = question;
+    document.getElementById('adminDeletedAnswer').textContent = answer;
+    document.getElementById('viewDeletedAdminModal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function closeViewDeletedAdminModal() {
+    document.getElementById('viewDeletedAdminModal').style.display = 'none';
+    document.body.style.overflow = 'auto';
+}
+
+</script>
+<script>
     history.pushState(null, "", location.href);
     window.onpopstate = function () {
-        history.pushState(null, "", location.href);
-    };
+    history.pushState(null, "", location.href);
+};
 </script>
-
-
-
-    
+<script>
+    history.pushState(null, "", location.href);
+    window.onpopstate = function () {
+    history.pushState(null, "", location.href);
+ };
+</script>
 </body>
 </html>
