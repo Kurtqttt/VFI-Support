@@ -12,7 +12,9 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'user') {
     exit;
 }
 
-$stmt = $pdo->query("SELECT * FROM faqs ORDER BY id DESC");
+$stmt = $pdo->prepare("SELECT * FROM faqs WHERE visibility = 'user' ORDER BY id DESC");
+$stmt->execute();
+
 $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 

@@ -84,25 +84,19 @@ if ($_POST['action'] === 'delete_admin_faq') {
         $deletedBy = $_SESSION['user'] ?? 'admin';
 
         // Insert into deleted_faqs table
-        $origin = isset($faq['is_admin']) && $faq['is_admin'] ? 'admin_faqs' : 'faqs';
-
-        $origin = 'admin_faqs';
-
-$insertStmt = $pdo->prepare("
-    INSERT INTO deleted_faqs (original_id, question, answer, status, topic, attachment, deleted_by, origin)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-");
-$insertStmt->execute([
-    $faq['id'],
-    $faq['question'],
-    $faq['answer'],
-    $faq['status'],
-    $faq['topic'],
-    $faq['attachment'] ?? '',
-    $deletedBy,
-    $origin
-]);
-
+        $insertStmt = $pdo->prepare("
+            INSERT INTO deleted_faqs (original_id, question, answer, status, topic, attachment, deleted_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ");
+        $insertStmt->execute([
+            $faq['id'],
+            $faq['question'],
+            $faq['answer'],
+            $faq['status'],
+            $faq['topic'],
+            $faq['attachment'] ?? '',
+            $deletedBy
+        ]);
 
         // Delete from admin_faqs
         $deleteStmt = $pdo->prepare("DELETE FROM admin_faqs WHERE id = ?");
@@ -129,25 +123,16 @@ $insertStmt->execute([
     }
 
     // Handle File Upload
-    // Handle Multiple File Uploads
-$filenames = [];
+    $filename = null;
+    if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] === UPLOAD_ERR_OK) {
+        $originalName = basename($_FILES['attachment']['name']);
+        $uniqueName = uniqid() . "_" . $originalName;
+        $targetPath = $uploadPath . $uniqueName;
 
-if (!empty($_FILES['attachments']['name'][0])) {
-    foreach ($_FILES['attachments']['name'] as $key => $name) {
-        if ($_FILES['attachments']['error'][$key] === UPLOAD_ERR_OK) {
-            $originalName = basename($name);
-            $uniqueName = uniqid() . "_" . $originalName;
-            $targetPath = $uploadPath . $uniqueName;
-
-            if (move_uploaded_file($_FILES['attachments']['tmp_name'][$key], $targetPath)) {
-                $filenames[] = $targetPath;
-            }
+        if (move_uploaded_file($_FILES['attachment']['tmp_name'], $targetPath)) {
+            $filename = $targetPath;
         }
     }
-}
-
-$attachment = json_encode($filenames); // Store in DB as JSON
-
 
     if ($_POST['action'] === 'add') {
     $q = $_POST['question'];
@@ -225,13 +210,8 @@ if ($_POST['action'] === 'restore') {
     $faq = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($faq) {
-        // Check origin field to decide where to restore
-        if ($faq['origin'] === 'admin_faqs') {
-            $insert = $pdo->prepare("INSERT INTO admin_faqs (question, answer, status, topic, attachment) VALUES (?, ?, ?, ?, ?)");
-        } else {
-            $insert = $pdo->prepare("INSERT INTO faqs (question, answer, status, topic, attachment) VALUES (?, ?, ?, ?, ?)");
-        }
-
+        // Insert back into faqs
+        $insert = $pdo->prepare("INSERT INTO faqs (question, answer, status, topic, attachment) VALUES (?, ?, ?, ?, ?)");
         $insert->execute([
             $faq['question'],
             $faq['answer'],
@@ -245,7 +225,6 @@ if ($_POST['action'] === 'restore') {
         $delete->execute([$id]);
     }
 }
-
 
     header("Location: admin.php");
     exit;
@@ -470,8 +449,7 @@ $chartData = [
                             <label class="form-label">
                                 <i class="fas fa-paperclip"></i> Upload Attachment (Image/File)
                             </label>
-                            <input type="file" name="attachments[]" class="modern-input" multiple id="faqAttachments">
-                        <div id="filePreviewList"></div>
+                            <input type="file" name="attachment" class="modern-input">
                         </div>
                         
                         <input type="hidden" name="action" value="add">
@@ -1586,35 +1564,6 @@ function closeViewDeletedAdminModal() {
     document.getElementById('viewDeletedAdminModal').style.display = 'none';
     document.body.style.overflow = 'auto';
 }
-
-    const attachmentInput = document.getElementById('faqAttachments');
-    const previewList = document.getElementById('filePreviewList');
-
-    attachmentInput.addEventListener('change', function () {
-        previewList.innerHTML = ''; // Clear list on new selection
-
-        Array.from(attachmentInput.files).forEach((file, index) => {
-            const fileItem = document.createElement('div');
-            fileItem.classList.add('file-preview-item');
-            fileItem.innerHTML = `
-                ${file.name} 
-                <button type="button" class="remove-btn" onclick="removeFile(${index})">X</button>
-            `;
-            previewList.appendChild(fileItem);
-        });
-    });
-
-    function removeFile(index) {
-        const dt = new DataTransfer();
-        const currentFiles = attachmentInput.files;
-
-        for (let i = 0; i < currentFiles.length; i++) {
-            if (i !== index) dt.items.add(currentFiles[i]);
-        }
-
-        attachmentInput.files = dt.files;
-        attachmentInput.dispatchEvent(new Event('change')); // Refresh preview
-    }
 
 </script>
 <script>
