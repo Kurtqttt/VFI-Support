@@ -147,7 +147,8 @@ $insertStmt->execute([
     }
 
 
-$attachment = json_encode($filenames); // Store in DB as JSON$filename = $targetPath; // just a string, not JSON
+    // Store the first file path as a simple string for consistency
+    $filename = !empty($filenames) ? $filenames[0] : '';
 
    if ($_POST['action'] === 'add') {
     $q = $_POST['question'];
@@ -155,7 +156,6 @@ $attachment = json_encode($filenames); // Store in DB as JSON$filename = $target
     $status = $_POST['status'] ?? 'not resolved';
     $topic = $_POST['topic'] ?? 'Others';
     $audience = $_POST['target_audience'] ?? 'user'; // 'admin' or 'user'
-    $filename = $attachment;
 
     if ($audience === 'admin') {
         $stmt = $pdo->prepare("INSERT INTO admin_faqs (question, answer, status, topic, attachment) VALUES (?, ?, ?, ?, ?)");
@@ -174,16 +174,36 @@ $attachment = json_encode($filenames); // Store in DB as JSON$filename = $target
         $a = $_POST['answer'];
         $s = $_POST['status'] ?? 'not resolved';
         $topic = $_POST['topic'] ?? 'Others';
-
-        if ($filename) {
-    // With new attachment
-    $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ?, attachment = ? WHERE id = ?");
-    $stmt->execute([$q, $a, $s, $topic, $filename, $id]);
-} else {
-    // Without new attachment
-    $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ? WHERE id = ?");
-    $stmt->execute([$q, $a, $s, $topic, $id]);
-}
+        
+        // Handle file upload for updates (single file only)
+        $updateFilename = '';
+        if (!empty($_FILES['attachment']['name']) && $_FILES['attachment']['error'] === UPLOAD_ERR_OK) {
+            $ext = pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION);
+            $safeName = preg_replace('/[^A-Za-z0-9_\-]/', '_', pathinfo($_FILES['attachment']['name'], PATHINFO_FILENAME));
+            $uniqueName = uniqid() . "_" . $safeName . '.' . $ext;
+            $targetPath = $uploadPath . $uniqueName;
+            
+            if (move_uploaded_file($_FILES['attachment']['tmp_name'], $targetPath)) {
+                $updateFilename = $targetPath;
+            }
+        }
+        
+        // Check if user wants to remove existing attachment
+        $removeExistingAttachment = isset($_POST['remove_existing_attachment']) && $_POST['remove_existing_attachment'] == '1';
+        
+        if ($removeExistingAttachment && !$updateFilename) {
+            // Remove existing attachment only
+            $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ?, attachment = NULL WHERE id = ?");
+            $stmt->execute([$q, $a, $s, $topic, $id]);
+        } elseif ($updateFilename) {
+            // With new attachment (replaces existing if any)
+            $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ?, attachment = ? WHERE id = ?");
+            $stmt->execute([$q, $a, $s, $topic, $updateFilename, $id]);
+        } else {
+            // Without new attachment and not removing existing
+            $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ? WHERE id = ?");
+            $stmt->execute([$q, $a, $s, $topic, $id]);
+        }
 
     }
 
@@ -1525,11 +1545,15 @@ function removeAttachment(btn) {
     const fileInput = wrapper.parentElement.querySelector('input[type="file"]');
     const hiddenInput = wrapper.querySelector('input[name="remove_existing_attachment"]');
 
+    // Mark that the current attachment should be removed BEFORE removing the wrapper
+    if (hiddenInput) {
+        hiddenInput.value = "1";
+        // Move the hidden input outside the wrapper so it doesn't get removed
+        wrapper.parentElement.appendChild(hiddenInput);
+    }
+
     // Remove the current display
     wrapper.remove();
-
-    // Mark that the current attachment should be removed
-    if (hiddenInput) hiddenInput.value = "1";
 
     // Enable the file input
     if (fileInput) {

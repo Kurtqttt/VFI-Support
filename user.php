@@ -128,8 +128,16 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <?php else: ?>
                         <?php foreach ($faqs as $index => $faq): ?>
     <?php 
-        $attachments = json_decode($faq['attachment'], true); 
-        $firstAttachment = is_array($attachments) ? $attachments[0] : '';
+        // Handle both JSON format (legacy) and string format (current)
+        $firstAttachment = '';
+        if (!empty($faq['attachment'])) {
+            $decoded = json_decode($faq['attachment'], true);
+            if (is_array($decoded) && !empty($decoded)) {
+                $firstAttachment = $decoded[0]; // Legacy JSON format
+            } else {
+                $firstAttachment = $faq['attachment']; // Current string format
+            }
+        }
     ?>
     <div class="faq-box modern-faq-item" 
         data-index="<?= $index ?>" 
