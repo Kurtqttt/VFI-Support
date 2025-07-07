@@ -147,8 +147,7 @@ $insertStmt->execute([
     }
 
 
-$attachment = json_encode($filenames); // Store in DB as JSON
-
+$attachment = json_encode($filenames); // Store in DB as JSON$filename = $targetPath; // just a string, not JSON
 
    if ($_POST['action'] === 'add') {
     $q = $_POST['question'];
