@@ -349,12 +349,35 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 // Load Admin FAQs
 $adminFaqs = $pdo->query("SELECT * FROM admin_faqs ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
 
-// Count stats
-$totalFaqs = count($faqs);
+// Count user stats
+$totalUsers = count($allUsers);
+$adminCount = 0;
+$userCount = 0;
+
+foreach ($allUsers as $user) {
+    if ($user['role'] === 'admin') {
+        $adminCount++;
+    } else {
+        $userCount++;
+    }
+}
+
+// Count FAQ stats (including Admin FAQs)
+$totalFaqs = count($faqs) + count($adminFaqs);
 $resolvedCount = 0;
 $unsolvedCount = 0;
 
+// Count regular FAQs
 foreach ($faqs as $faq) {
+    if ($faq['status'] === 'resolved') {
+        $resolvedCount++;
+    } else {
+        $unsolvedCount++;
+    }
+}
+
+// Count Admin FAQs
+foreach ($adminFaqs as $faq) {
     if ($faq['status'] === 'resolved') {
         $resolvedCount++;
     } else {
@@ -401,6 +424,9 @@ $chartData = [
     'unsolved' => $unsolvedCount,
     'resolvedPercentage' => $resolvedPercentage,
     'unsolvedPercentage' => $unsolvedPercentage,
+    'totalUsers' => $totalUsers,
+    'adminCount' => $adminCount,
+    'userCount' => $userCount,
     'monthly' => array_reverse($monthlyStats)
 ];
 ?>
@@ -450,6 +476,7 @@ $chartData = [
                     <div class="stats-card-content">
                         <h3><?= $totalFaqs ?></h3>
                         <p>Total FAQs</p>
+                        <small>(Regular + Admin)</small>
                     </div>
                 </div>
                 
@@ -482,6 +509,27 @@ $chartData = [
                     <div class="stats-card-content">
                         <h3><?= $resolvedPercentage ?>%</h3>
                         <p>Resolution Rate</p>
+                    </div>
+                </div>
+                
+                <div class="stats-card">
+                    <div class="stats-card-icon users">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <div class="stats-card-content">
+                        <h3><?= $totalUsers ?></h3>
+                        <p>Total Users</p>
+                        <small>(All Accounts)</small>
+                    </div>
+                </div>
+                
+                <div class="stats-card">
+                    <div class="stats-card-icon admins">
+                        <i class="fas fa-user-shield"></i>
+                    </div>
+                    <div class="stats-card-content">
+                        <h3><?= $adminCount ?></h3>
+                        <p>Admins</p>
                     </div>
                 </div>
             </div>
@@ -1239,8 +1287,18 @@ $chartData = [
                                 <i class="fas fa-user-shield"></i>
                             </div>
                             <div class="summary-content">
-                                <h4><?= htmlspecialchars($_SESSION['user']) ?></h4>
-                                <p>Admin User</p>
+                                <h4><?= $adminCount ?></h4>
+                                <p>Total Admins</p>
+                            </div>
+                        </div>
+                        
+                        <div class="summary-item">
+                            <div class="summary-icon users">
+                                <i class="fas fa-users"></i>
+                            </div>
+                            <div class="summary-content">
+                                <h4><?= $totalUsers ?></h4>
+                                <p>Total Users</p>
                             </div>
                         </div>
                     </div>

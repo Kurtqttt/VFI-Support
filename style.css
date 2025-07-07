@@ -2953,6 +2953,14 @@ button {
     background: #c0392b;
 }
 
+.stats-card-icon.users {
+    background: linear-gradient(45deg, #3b82f6, #1d4ed8);
+}
+
+.stats-card-icon.admins {
+    background: linear-gradient(45deg, #8b5cf6, #7c3aed);
+}
+
 
 
 
