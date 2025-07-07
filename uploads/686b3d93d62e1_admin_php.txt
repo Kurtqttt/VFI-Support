@@ -129,44 +129,41 @@ $insertStmt->execute([
     }
 
     // Handle File Upload
-    $filenames = [];
+    // Handle Multiple File Uploads
+$filenames = [];
 
-    if (!empty($_FILES['attachments']['name'][0])) {
-        foreach ($_FILES['attachments']['name'] as $key => $name) {
-            if ($_FILES['attachments']['error'][$key] === UPLOAD_ERR_OK) {
-                $ext = pathinfo($name, PATHINFO_EXTENSION); // Get file extension
-                $safeName = preg_replace('/[^A-Za-z0-9_\-]/', '_', pathinfo($name, PATHINFO_FILENAME)); // Sanitize filename
-                $uniqueName = uniqid() . "_" . $safeName . '.' . $ext; // Add extension back
-                $targetPath = $uploadPath . $uniqueName;
+if (!empty($_FILES['attachments']['name'][0])) {
+    foreach ($_FILES['attachments']['name'] as $key => $name) {
+        if ($_FILES['attachments']['error'][$key] === UPLOAD_ERR_OK) {
+            $originalName = basename($name);
+            $uniqueName = uniqid() . "_" . $originalName;
+            $targetPath = $uploadPath . $uniqueName;
 
-                if (move_uploaded_file($_FILES['attachments']['tmp_name'][$key], $targetPath)) {
-                    $filenames[] = $targetPath;
-                }
+            if (move_uploaded_file($_FILES['attachments']['tmp_name'][$key], $targetPath)) {
+                $filenames[] = $targetPath;
             }
         }
     }
-
+}
 
 $attachment = json_encode($filenames); // Store in DB as JSON
 
 
-   if ($_POST['action'] === 'add') {
+    if ($_POST['action'] === 'add') {
     $q = $_POST['question'];
     $a = $_POST['answer'];
     $status = $_POST['status'] ?? 'not resolved';
     $topic = $_POST['topic'] ?? 'Others';
-    $audience = $_POST['target_audience'] ?? 'user'; // 'admin' or 'user'
-    $filename = $attachment;
+    $audience = $_POST['target_audience'] ?? 'user';
 
     if ($audience === 'admin') {
         $stmt = $pdo->prepare("INSERT INTO admin_faqs (question, answer, status, topic, attachment) VALUES (?, ?, ?, ?, ?)");
     } else {
-        $stmt = $pdo->prepare("INSERT INTO faqs (question, answer, status, topic, attachment, visibility) VALUES (?, ?, ?, ?, ?, 'user')");
+        $stmt = $pdo->prepare("INSERT INTO faqs (question, answer, status, topic, attachment) VALUES (?, ?, ?, ?, ?)");
     }
 
     $stmt->execute([$q, $a, $status, $topic, $filename]);
 }
-
 
 
     if ($_POST['action'] === 'update') {
