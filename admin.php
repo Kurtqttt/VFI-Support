@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // UPDATE user
+   // UPDATE user
     if ($_POST['action'] === 'update_user') {
         $id = $_POST['update_user_id'];
         $username = $_POST['username'];
@@ -55,6 +55,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         header("Location: admin.php?user_updated=1");
+        exit;
+    }
+
+    // DELETE user
+    if ($_POST['action'] === 'delete_user') {
+        $userId = $_POST['user_id'];
+        
+        // Get all users to find current user's ID
+        $currentUserStmt = $pdo->prepare("SELECT id FROM users WHERE username = ?");
+        $currentUserStmt->execute([$_SESSION['user']]);
+        $currentUser = $currentUserStmt->fetch(PDO::FETCH_ASSOC);
+        $currentUserId = $currentUser ? $currentUser['id'] : null;
+        
+        // Prevent deletion of the current logged-in user
+        if ($userId && $userId != $currentUserId) {
+            $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
+            $stmt->execute([$userId]);
+        }
+        
+        header("Location: admin.php?user_deleted=1");
         exit;
     }
 
@@ -137,19 +157,7 @@ $insertStmt->execute([
     }
 }
 
-    // DELETE user
-    if ($_POST['action'] === 'delete_user') {
-        $deleteId = $_POST['delete_user_id'];
-
-        // Optional: Prevent deleting own account
-        if ($_SESSION['user_id'] != $deleteId) {
-            $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
-            $stmt->execute([$deleteId]);
-        }
-
-    header("Location: admin.php");
-    exit;
-}
+    
 
     if (!file_exists($uploadPath)) {
         mkdir($uploadPath, 0777, true);
@@ -333,6 +341,13 @@ if ($_POST['action'] === 'restore') {
 // Load all FAQs
 $stmt = $pdo->query("SELECT * FROM faqs ORDER BY id DESC");
 $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Load all FAQs
+$stmt = $pdo->query("SELECT * FROM faqs ORDER BY id DESC");
+$faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Load Admin FAQs
+$adminFaqs = $pdo->query("SELECT * FROM admin_faqs ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
 
 // Count stats
 $totalFaqs = count($faqs);
@@ -748,21 +763,58 @@ $chartData = [
             </div>
 
             <!-- Admin-Only FAQs -->
+            <!-- Admin-Only FAQs -->
             <div class="admin-card">
                 <div class="card-header">
-                    <h2><i class="fas fa-user-shield"></i> Admin FAQs</h2>
+                    <h2 class="card-title">
+                        <i class="fas fa-user-shield"></i> Admin FAQs
+                        <span class="admin-faq-count">(<?= count($adminFaqs) ?> items)</span>
+                    </h2>
+                    <div class="search-wrapper">
+                        <i class="fas fa-search search-icon"></i>
+                        <input type="text" id="adminFaqSearch" class="search-input" placeholder="Search Admin FAQs...">
+                        <select id="adminFaqStatusFilter" class="status-filter-dropdown" onchange="filterAdminFaqs()">
+                            <option value="all">All Status</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="not resolved">Unresolved</option>
+                        </select>
+                        <select id="adminFaqTopicFilter" class="status-filter-dropdown" onchange="filterAdminFaqs()">
+                            <option value="all">All Topics</option>
+                            <option value="Account Issues">Account Issues</option>
+                            <option value="Email Support">Email Support</option>
+                            <option value="Printer & Scanner">Printer & Scanner</option>
+                            <option value="Network & Internet">Network & Internet</option>
+                            <option value="Hardware Problems">Hardware Problems</option>
+                            <option value="Software Installation">Software Installation</option>
+                            <option value="System Access">System Access</option>
+                            <option value="Company Applications">Company Applications</option>
+                            <option value="Password & Login">Password & Login</option>
+                            <option value="Security & Policy">Security & Policy</option>
+                            <option value="Forms & Requests">Forms & Requests</option>
+                            <option value="IT Procedures">IT Procedures</option>
+                            <option value="Remote Access">Remote Access</option>
+                            <option value="Backup & Recovery">Backup & Recovery</option>
+                            <option value="User Guides">User Guides</option>
+                            <option value="Troubleshooting">Troubleshooting</option>
+                            <option value="Device Setup">Device Setup</option>
+                            <option value="File Sharing & Drives">File Sharing & Drives</option>
+                            <option value="IT Announcements">IT Announcements</option>
+                            <option value="Others">Others</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="card-content">
-                <?php
-                $adminFaqs = $pdo->query("SELECT * FROM admin_faqs ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
-                if (empty($adminFaqs)): ?>
-                    <div class="empty-state">
-                        <i class="fas fa-inbox"></i>
-                        <h3>No Admin FAQs Yet</h3>
-                    </div>
-                <?php else: ?>
-                <?php foreach ($adminFaqs as $index => $faq): ?>
-                <div class="faq-item" data-index="<?= $index ?>">
+                    <div class="faq-list-container" id="adminFaqList">
+                        <?php
+                        $adminFaqs = $pdo->query("SELECT * FROM admin_faqs ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
+                        if (empty($adminFaqs)): ?>
+                            <div class="empty-state">
+                                <i class="fas fa-inbox"></i>
+                                <h3>No Admin FAQs Yet</h3>
+                            </div>
+                        <?php else: ?>
+                        <?php foreach ($adminFaqs as $index => $faq): ?>
+                <div class="faq-item admin-faq-item" data-index="<?= $index ?>" data-topic="<?= htmlspecialchars($faq['topic']) ?>">
                     <div class="faq-item-header">
                         <span class="faq-number">#<?= $faq['id'] ?></span>
                         <span class="status-badge <?= $faq['status'] === 'resolved' ? 'resolved' : 'unsolved' ?>">
@@ -856,7 +908,10 @@ $chartData = [
             </form>
         </div>
     <?php endforeach; ?>
-    <?php endif; ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
     </div>
 </div>
 
@@ -903,6 +958,9 @@ $chartData = [
                                 <input type="hidden" name="update_user_id" value="<?= $user['id'] ?>">
                                 <button type="submit" class="modern-btn success" name="action" value="update_user">
                                     <i class="fas fa-save"></i>
+                                </button>
+                                <button type="button" class="modern-btn danger" onclick="confirmDeleteUser(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username'], ENT_QUOTES) ?>')" style="margin-left: 5px;">
+                                    <i class="fas fa-trash"></i>
                                 </button>
                             </td>
                             
@@ -1223,7 +1281,78 @@ $chartData = [
         </div>
     </div>
 
+    <!-- Delete User Confirmation Modal -->
+    <div id="deleteUserModal" class="modal">
+        <div class="modal-content delete-modal-content">
+            <div class="modal-header delete-modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Confirm Delete User</span>
+                </h3>
+                <button class="close-modal" onclick="closeDeleteUserModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="delete-warning">
+                    <div class="warning-icon">
+                        <i class="fas fa-user-times"></i>
+                    </div>
+                    <div class="warning-content">
+                        <h4>Are you sure you want to delete this user?</h4>
+                        <p id="delete-user-question-preview">This action cannot be undone.</p>
+                        <div class="warning-note">
+                            <i class="fas fa-info-circle"></i>
+                            <span>This will permanently remove the user from your system.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="modern-btn secondary" onclick="closeDeleteUserModal()">
+                    <i class="fas fa-times"></i>
+                    <span>Cancel</span>
+                </button>
+                <button class="modern-btn danger" onclick="deleteUser()">
+                    <i class="fas fa-trash"></i>
+                    <span>Delete User</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
+
+         let deleteUserId = null;
+        let deleteUserName = '';
+
+        // User delete confirmation functions
+        function confirmDeleteUser(id, username) {
+            deleteUserId = id;
+            deleteUserName = username;
+            document.getElementById('delete-user-question-preview').innerHTML = `<strong>"${username}"</strong>`;
+            document.getElementById('deleteUserModal').style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+        }
+
+        function deleteUser() {
+            if (deleteUserId) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="delete_user">
+                    <input type="hidden" name="user_id" value="${deleteUserId}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        function closeDeleteUserModal() {
+            document.getElementById('deleteUserModal').style.display = 'none';
+            document.body.style.overflow = 'auto';
+            deleteUserId = null;
+            deleteUserName = '';
+        }
+
         // PHP data for JavaScript
         const chartData = <?= json_encode($chartData) ?>;
         
@@ -1290,6 +1419,38 @@ $chartData = [
             });
         }
 
+        // Filter Admin FAQs
+        function filterAdminFaqs() {
+            const query = document.getElementById('adminFaqSearch').value.toLowerCase();
+            const selectedStatus = document.getElementById('adminFaqStatusFilter')?.value || 'all';
+            const selectedTopic = document.getElementById('adminFaqTopicFilter')?.value || 'all';
+            const faqs = document.querySelectorAll('.admin-faq-item');
+            let visibleCount = 0;
+
+            faqs.forEach(faq => {
+                const question = faq.querySelector('input[name="question"]').value.toLowerCase();
+                const answer = faq.querySelector('textarea[name="answer"]').value.toLowerCase();
+                const status = faq.querySelector('select[name="status"]').value;
+                const topic = faq.getAttribute('data-topic') || '';
+                
+                const matchesQuery = question.includes(query) || answer.includes(query);
+                const matchesStatus = (selectedStatus === 'all' || status === selectedStatus);
+                const matchesTopic = (selectedTopic === 'all' || topic === selectedTopic);
+
+                if (matchesQuery && matchesStatus && matchesTopic) {
+                    faq.style.display = 'block';
+                    visibleCount++;
+                } else {
+                    faq.style.display = 'none';
+                }
+            });
+
+            const countElement = document.querySelector('.admin-faq-count');
+            if (countElement) {
+                countElement.textContent = `(${visibleCount} items)`;
+            }
+        }
+
         // NEW: View deleted FAQ details
         function viewDeletedFaq(question, answer) {
             document.getElementById('viewDeletedQuestion').textContent = question;
@@ -1323,10 +1484,23 @@ $chartData = [
             }, 300);
         });
 
+
+         // Admin FAQs search listener
+        document.getElementById('adminFaqSearch').addEventListener('input', () => {
+            filterAdminFaqs();
+            const searchIcon = document.querySelector('.search-icon');
+            searchIcon.classList.add('fa-spin');
+            setTimeout(() => {
+                searchIcon.classList.remove('fa-spin');
+            }, 300);
+        });
+
         // Dropdown filter listeners
         document.getElementById('adminStatusFilter').addEventListener('change', filterFaqs);
         document.getElementById('deletedStatusFilter').addEventListener('change', filterDeletedFaqs);
         document.getElementById('deletedTopicFilter').addEventListener('change', filterDeletedFaqs);
+        document.getElementById('adminFaqStatusFilter').addEventListener('change', filterAdminFaqs);
+        document.getElementById('adminFaqTopicFilter').addEventListener('change', filterAdminFaqs);
 
         // Edit mode functions
         function toggleEdit(index) {
@@ -1574,9 +1748,11 @@ $chartData = [
             const deleteModal = document.getElementById('deleteModal');
             const statsModal = document.getElementById('statsModal');
             const viewDeletedModal = document.getElementById('viewDeletedModal');
+            const deleteUserModal = document.getElementById('deleteUserModal');
             if (e.target === deleteModal) closeDeleteModal();
             if (e.target === statsModal) closeStatsModal();
             if (e.target === viewDeletedModal) closeViewDeletedModal();
+            if (e.target === deleteUserModal) closeDeleteUserModal();
         });
 
         // Close modals with Escape
@@ -1585,6 +1761,7 @@ $chartData = [
                 closeDeleteModal();
                 closeStatsModal();
                 closeViewDeletedModal();
+                closeDeleteUserModal();
             }
         });
 
