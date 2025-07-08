@@ -1,21 +1,37 @@
 <?php
-session_start();
 require_once 'includes/db.php';
+session_start();
+
+// Add session activity tracking and timeout checking
+if (!isset($_SESSION['last_activity'])) {
+    $_SESSION['last_activity'] = time();
+} else {
+    // Check if session has expired (8 hours = 28800 seconds)
+    if (time() - $_SESSION['last_activity'] > 28800) {
+        session_unset();
+        session_destroy();
+        header("Location: index.php?timeout=1");
+        exit;
+    }
+}
+
+// Update last activity time on every page load
+$_SESSION['last_activity'] = time();
 
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Cache-Control: post-check=0, pre-check=0", false);
 header("Pragma: no-cache");
 
-// Redirect to login if not logged in or not user
+// Enhanced session check
 if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'user') {
+    session_unset();
+    session_destroy();
     header("Location: index.php");
     exit;
 }
 
 $stmt = $pdo->prepare("SELECT id, question, answer, status, topic, attachment FROM faqs WHERE visibility = 'user' ORDER BY id DESC");
-
 $stmt->execute();
-
 $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
@@ -43,11 +59,30 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 </div>
             </div>
             <div class="header-actions">
-                <a href="index.php" class="admin-login-btn">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Logout</span>
-                </a>
+    <!-- User Notification Bell -->
+    <div class="notification-bell" id="notificationBell">
+         <span style="color: white; font-size: 20px; font-weight: bold;">🔔</span>
+        <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
+        
+        <!-- Notification Dropdown -->
+        <div class="notification-dropdown" id="notificationDropdown">
+            <div class="notification-header">
+                <h4><i class="fas fa-bell"></i> Updates</h4>
+                <button class="mark-all-read" onclick="markAllAsRead()">
+                    <i class="fas fa-check-double"></i> Mark all read
+                </button>
             </div>
+            <div class="notification-list" id="notificationList">
+                <!-- Notifications will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <a href="index.php" class="admin-login-btn">
+        <i class="fas fa-sign-out-alt"></i>
+        <span>Logout</span>
+    </a>
+</div>
         </div>
     </div>
 
@@ -342,6 +377,294 @@ $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     window.addEventListener('popstate', function () {
         history.pushState(null, document.title, location.href);
     });
+</script>
+<script>
+// Session Keep-Alive System for Users
+let sessionTimer;
+let activityTimer;
+
+function refreshSession() {
+    fetch('session_refresh.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'action=refresh'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'error') {
+            window.location.href = 'index.php?timeout=1';
+        }
+    })
+    .catch(error => {
+        console.log('Session refresh failed:', error);
+    });
+}
+
+function startSessionTimer() {
+    if (sessionTimer) clearInterval(sessionTimer);
+    sessionTimer = setInterval(refreshSession, 300000); // 5 minutes
+}
+
+function resetActivityTimer() {
+    if (activityTimer) clearTimeout(activityTimer);
+    activityTimer = setTimeout(() => {
+        alert('Your session will expire soon due to inactivity. Click OK to stay logged in.');
+        refreshSession();
+        resetActivityTimer();
+    }, 28800000); // 8 hours
+}
+
+// Track user activity
+['click', 'keypress', 'scroll', 'mousemove'].forEach(event => {
+    document.addEventListener(event, () => {
+        resetActivityTimer();
+    }, true);
+});
+
+// Start timers when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    startSessionTimer();
+    resetActivityTimer();
+});
+
+// Keep session alive when page becomes visible again
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) {
+        refreshSession();
+    }
+});
+</script>
+
+<script>
+// User Notification System
+class UserNotificationManager {
+    constructor() {
+        this.isOpen = false;
+        this.pollInterval = 8000; // 8 seconds for users (less frequent than admin)
+        this.init();
+    }
+    
+    init() {
+        this.bindEvents();
+        this.startPolling();
+        this.loadNotifications();
+    }
+    
+    bindEvents() {
+        const bell = document.getElementById('notificationBell');
+        if (!bell) return;
+        
+        bell.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleDropdown();
+        });
+        
+        document.addEventListener('click', (e) => {
+            if (!bell.contains(e.target)) {
+                this.closeDropdown();
+            }
+        });
+    }
+    
+    toggleDropdown() {
+        const dropdown = document.getElementById('notificationDropdown');
+        if (!dropdown) return;
+        
+        this.isOpen = !this.isOpen;
+        
+        if (this.isOpen) {
+            dropdown.classList.add('show');
+            this.loadNotifications();
+        } else {
+            dropdown.classList.remove('show');
+        }
+    }
+    
+    closeDropdown() {
+        const dropdown = document.getElementById('notificationDropdown');
+        if (!dropdown) return;
+        
+        dropdown.classList.remove('show');
+        this.isOpen = false;
+    }
+    
+    async loadNotifications() {
+        try {
+            const list = document.getElementById('notificationList');
+            if (list) {
+                list.innerHTML = `
+                    <div class="notification-loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                    </div>
+                `;
+            }
+            
+            const response = await fetch('notifications.php?action=get');
+            const data = await response.json();
+            
+            if (data.notifications) {
+                this.renderNotifications(data.notifications);
+            }
+        } catch (error) {
+            console.error('Error loading notifications:', error);
+            this.renderError();
+        }
+    }
+    
+    renderError() {
+        const list = document.getElementById('notificationList');
+        if (list) {
+            list.innerHTML = `
+                <div class="notification-empty">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <h3>Connection Issue</h3>
+                    <p>Unable to load notifications. Check your connection.</p>
+                </div>
+            `;
+        }
+    }
+    
+    async updateBadge() {
+        try {
+            const response = await fetch('notifications.php?action=count');
+            const data = await response.json();
+            
+            const badge = document.getElementById('notificationBadge');
+            if (!badge) return;
+            
+            if (data.count > 0) {
+                badge.textContent = data.count > 99 ? '99+' : data.count;
+                badge.style.display = 'flex';
+                
+                // Add subtle pulse effect for new notifications
+                badge.style.animation = 'none';
+                setTimeout(() => {
+                    badge.style.animation = 'notificationPulse 2s infinite';
+                }, 10);
+            } else {
+                badge.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error updating badge:', error);
+        }
+    }
+    
+    renderNotifications(notifications) {
+        const list = document.getElementById('notificationList');
+        if (!list) return;
+        
+        if (notifications.length === 0) {
+            list.innerHTML = `
+                <div class="notification-empty">
+                    <i class="fas fa-bell-slash"></i>
+                    <h3>All caught up! 🎉</h3>
+                    <p>No new updates at the moment. Check back later for new FAQs and announcements!</p>
+                </div>
+            `;
+            return;
+        }
+        
+        list.innerHTML = notifications.map(notification => `
+            <div class="notification-item unread" onclick="markAsRead(${notification.id})">
+                <div class="notification-content">
+                    <div class="notification-icon ${notification.type}">
+                        <i class="fas ${this.getIcon(notification.type)}"></i>
+                    </div>
+                    <div class="notification-text">
+                        <div class="notification-title">${notification.title}</div>
+                        <div class="notification-message">${notification.message}</div>
+                        <div class="notification-time">${notification.time_ago}</div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    getIcon(type) {
+        const icons = {
+            'new_faq': 'fa-plus-circle',
+            'faq_updated': 'fa-edit',
+            'system_announcement': 'fa-bullhorn',
+            'helpful_tip': 'fa-lightbulb',
+            'maintenance_notice': 'fa-tools',
+            'new_feature': 'fa-star',
+            'general_update': 'fa-info-circle'
+        };
+        return icons[type] || 'fa-bell';
+    }
+    
+    startPolling() {
+        // Initial load
+        this.updateBadge();
+        
+        // Set up polling
+        setInterval(() => {
+            this.updateBadge();
+            if (this.isOpen) {
+                this.loadNotifications();
+            }
+        }, this.pollInterval);
+    }
+}
+
+// User-specific notification functions
+async function markAsRead(id) {
+    try {
+        const notificationElement = event.currentTarget;
+        notificationElement.classList.add('notification-success');
+        
+        await fetch('notifications.php?action=mark_read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `id=${id}`
+        });
+        
+        setTimeout(() => {
+            if (window.userNotificationManager) {
+                userNotificationManager.loadNotifications();
+                userNotificationManager.updateBadge();
+            }
+        }, 300);
+    } catch (error) {
+        console.error('Error marking as read:', error);
+    }
+}
+
+async function markAllAsRead() {
+    try {
+        const button = event.currentTarget;
+        const originalText = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Marking...';
+        button.disabled = true;
+        
+        await fetch('notifications.php?action=mark_all_read', {
+            method: 'POST'
+        });
+        
+        button.innerHTML = '<i class="fas fa-check"></i> Done!';
+        
+        setTimeout(() => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            
+            if (window.userNotificationManager) {
+                userNotificationManager.loadNotifications();
+                userNotificationManager.updateBadge();
+            }
+        }, 1000);
+    } catch (error) {
+        console.error('Error marking all as read:', error);
+        button.innerHTML = originalText;
+        button.disabled = false;
+    }
+}
+
+// Initialize user notification manager
+document.addEventListener('DOMContentLoaded', function() {
+    window.userNotificationManager = new UserNotificationManager();
+});
 </script>
 </body>
 </html>
