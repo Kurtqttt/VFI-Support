@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-   // UPDATE user
+    // UPDATE user
     if ($_POST['action'] === 'update_user') {
         $id = $_POST['update_user_id'];
         $username = $_POST['username'];
@@ -58,26 +58,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // DELETE user
-    if ($_POST['action'] === 'delete_user') {
-        $userId = $_POST['user_id'];
-        
-        // Get all users to find current user's ID
-        $currentUserStmt = $pdo->prepare("SELECT id FROM users WHERE username = ?");
-        $currentUserStmt->execute([$_SESSION['user']]);
-        $currentUser = $currentUserStmt->fetch(PDO::FETCH_ASSOC);
-        $currentUserId = $currentUser ? $currentUser['id'] : null;
-        
-        // Prevent deletion of the current logged-in user
-        if ($userId && $userId != $currentUserId) {
-            $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
-            $stmt->execute([$userId]);
-        }
-        
-        header("Location: admin.php?user_deleted=1");
-        exit;
-    }
-
     if ($_POST['action'] === 'update_admin_faq') {
     $id = $_POST['id'];
     $q = $_POST['question'];
@@ -85,35 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $s = $_POST['status'];
     $topic = $_POST['topic'];
 
-    // Handle file upload for admin FAQ updates
-    $updateFilename = '';
-    if (!empty($_FILES['attachment']['name']) && $_FILES['attachment']['error'] === UPLOAD_ERR_OK) {
-        $ext = pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION);
-        $safeName = preg_replace('/[^A-Za-z0-9_\-]/', '_', pathinfo($_FILES['attachment']['name'], PATHINFO_FILENAME));
-        $uniqueName = uniqid() . "_" . $safeName . '.' . $ext;
-        $targetPath = $uploadPath . $uniqueName;
-        
-        if (move_uploaded_file($_FILES['attachment']['tmp_name'], $targetPath)) {
-            $updateFilename = $targetPath;
-        }
-    }
-    
-    // Check if user wants to remove existing attachment
-    $removeExistingAttachment = isset($_POST['remove_existing_attachment']) && $_POST['remove_existing_attachment'] == '1';
-    
-    if ($removeExistingAttachment && !$updateFilename) {
-        // Remove existing attachment only
-        $stmt = $pdo->prepare("UPDATE admin_faqs SET question = ?, answer = ?, status = ?, topic = ?, attachment = NULL WHERE id = ?");
-        $stmt->execute([$q, $a, $s, $topic, $id]);
-    } elseif ($updateFilename) {
-        // With new attachment (replaces existing if any)
-        $stmt = $pdo->prepare("UPDATE admin_faqs SET question = ?, answer = ?, status = ?, topic = ?, attachment = ? WHERE id = ?");
-        $stmt->execute([$q, $a, $s, $topic, $updateFilename, $id]);
-    } else {
-        // Without new attachment and not removing existing
-        $stmt = $pdo->prepare("UPDATE admin_faqs SET question = ?, answer = ?, status = ?, topic = ? WHERE id = ?");
-        $stmt->execute([$q, $a, $s, $topic, $id]);
-    }
+    $stmt = $pdo->prepare("UPDATE admin_faqs SET question = ?, answer = ?, status = ?, topic = ? WHERE id = ?");
+    $stmt->execute([$q, $a, $s, $topic, $id]);
 
     header("Location: admin.php");
     exit;
@@ -157,79 +110,60 @@ $insertStmt->execute([
     }
 }
 
-    
+    // DELETE user
+    if ($_POST['action'] === 'delete_user') {
+        $deleteId = $_POST['delete_user_id'];
+
+        // Optional: Prevent deleting own account
+        if ($_SESSION['user_id'] != $deleteId) {
+            $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
+            $stmt->execute([$deleteId]);
+        }
+
+    header("Location: admin.php");
+    exit;
+}
 
     if (!file_exists($uploadPath)) {
         mkdir($uploadPath, 0777, true);
     }
 
     // Handle File Upload
-    $filenames = [];
+    // Handle Multiple File Uploads
+$filenames = [];
 
-    if (!empty($_FILES['attachments']['name'][0])) {
-        foreach ($_FILES['attachments']['name'] as $key => $name) {
-            if ($_FILES['attachments']['error'][$key] === UPLOAD_ERR_OK) {
-                $ext = pathinfo($name, PATHINFO_EXTENSION); // Get file extension
-                $safeName = preg_replace('/[^A-Za-z0-9_\-]/', '_', pathinfo($name, PATHINFO_FILENAME)); // Sanitize filename
-                $uniqueName = uniqid() . "_" . $safeName . '.' . $ext; // Add extension back
-                $targetPath = $uploadPath . $uniqueName;
+if (!empty($_FILES['attachments']['name'][0])) {
+    foreach ($_FILES['attachments']['name'] as $key => $name) {
+        if ($_FILES['attachments']['error'][$key] === UPLOAD_ERR_OK) {
+            $originalName = basename($name);
+            $uniqueName = uniqid() . "_" . $originalName;
+            $targetPath = $uploadPath . $uniqueName;
 
-                if (move_uploaded_file($_FILES['attachments']['tmp_name'][$key], $targetPath)) {
-                    $filenames[] = $targetPath;
-                }
+            if (move_uploaded_file($_FILES['attachments']['tmp_name'][$key], $targetPath)) {
+                $filenames[] = $targetPath;
             }
         }
     }
+}
+
+$attachment = json_encode($filenames); // Store in DB as JSON
 
 
-$attachment = json_encode($filenames); // Store in DB as JSON$filename = $targetPath; // just a string, not JSON
-
-   // Store the first file path as a simple string for consistency
-    $filename = !empty($filenames) ? $filenames[0] : '';
-
-   if ($_POST['action'] === 'add') {
+    if ($_POST['action'] === 'add') {
     $q = $_POST['question'];
     $a = $_POST['answer'];
     $status = $_POST['status'] ?? 'not resolved';
     $topic = $_POST['topic'] ?? 'Others';
-    $audience = $_POST['target_audience'] ?? 'user'; // 'admin' or 'user'
+    $audience = $_POST['target_audience'] ?? 'user';
 
     if ($audience === 'admin') {
         $stmt = $pdo->prepare("INSERT INTO admin_faqs (question, answer, status, topic, attachment) VALUES (?, ?, ?, ?, ?)");
     } else {
-        $stmt = $pdo->prepare("INSERT INTO faqs (question, answer, status, topic, attachment, visibility) VALUES (?, ?, ?, ?, ?, 'user')");
+        $stmt = $pdo->prepare("INSERT INTO faqs (question, answer, status, topic, attachment) VALUES (?, ?, ?, ?, ?)");
     }
 
     $stmt->execute([$q, $a, $status, $topic, $filename]);
 }
-
-
-
-if ($_POST['action'] === 'update') {
-        $id = $_POST['id'];
-        $q = $_POST['question'];
-        $a = $_POST['answer'];
-        $s = $_POST['status'] ?? 'not resolved';
-        $topic = $_POST['topic'] ?? 'Others';
-        
-        // Check if user wants to remove existing attachment
-        $removeExistingAttachment = isset($_POST['remove_existing_attachment']) && $_POST['remove_existing_attachment'] == '1';
-        
-        if ($removeExistingAttachment && !$filename) {
-            // Remove existing attachment only
-            $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ?, attachment = NULL WHERE id = ?");
-            $stmt->execute([$q, $a, $s, $topic, $id]);
-        } elseif ($filename) {
-            // With new attachment (replaces existing if any)
-            $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ?, attachment = ? WHERE id = ?");
-            $stmt->execute([$q, $a, $s, $topic, $filename, $id]);
-        } else {
-            // Without new attachment and not removing existing
-            $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ? WHERE id = ?");
-            $stmt->execute([$q, $a, $s, $topic, $id]);
-        }
-
-    }
 
 
     if ($_POST['action'] === 'update') {
@@ -238,69 +172,49 @@ if ($_POST['action'] === 'update') {
         $a = $_POST['answer'];
         $s = $_POST['status'] ?? 'not resolved';
         $topic = $_POST['topic'] ?? 'Others';
-        
-        // Handle file upload for updates (single file only)
-        $updateFilename = '';
-        if (!empty($_FILES['attachment']['name']) && $_FILES['attachment']['error'] === UPLOAD_ERR_OK) {
-            $ext = pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION);
-            $safeName = preg_replace('/[^A-Za-z0-9_\-]/', '_', pathinfo($_FILES['attachment']['name'], PATHINFO_FILENAME));
-            $uniqueName = uniqid() . "_" . $safeName . '.' . $ext;
-            $targetPath = $uploadPath . $uniqueName;
-            
-            if (move_uploaded_file($_FILES['attachment']['tmp_name'], $targetPath)) {
-                $updateFilename = $targetPath;
-            }
-        }
-        
-        // Check if user wants to remove existing attachment
-        $removeExistingAttachment = isset($_POST['remove_existing_attachment']) && $_POST['remove_existing_attachment'] == '1';
-        
-        if ($removeExistingAttachment && !$updateFilename) {
-            // Remove existing attachment only
-            $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ?, attachment = NULL WHERE id = ?");
-            $stmt->execute([$q, $a, $s, $topic, $id]);
-        } elseif ($updateFilename) {
-            // With new attachment (replaces existing if any)
-            $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ?, attachment = ? WHERE id = ?");
-            $stmt->execute([$q, $a, $s, $topic, $updateFilename, $id]);
-        } else {
-            // Without new attachment and not removing existing
-            $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ? WHERE id = ?");
-            $stmt->execute([$q, $a, $s, $topic, $id]);
-        }
+
+        if ($filename) {
+    // With new attachment
+    $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ?, attachment = ? WHERE id = ?");
+    $stmt->execute([$q, $a, $s, $topic, $filename, $id]);
+} else {
+    // Without new attachment
+    $stmt = $pdo->prepare("UPDATE faqs SET question = ?, answer = ?, status = ?, topic = ? WHERE id = ?");
+    $stmt->execute([$q, $a, $s, $topic, $id]);
+}
 
     }
 
     if ($_POST['action'] === 'delete') {
-        $id = $_POST['id'];
+    $id = $_POST['id'];
 
-        // Get current FAQ
-        $stmt = $pdo->prepare("SELECT * FROM faqs WHERE id = ?");
-        $stmt->execute([$id]);
-        $faq = $stmt->fetch(PDO::FETCH_ASSOC);
+    // Get current FAQ
+    $stmt = $pdo->prepare("SELECT * FROM faqs WHERE id = ?");
+    $stmt->execute([$id]);
+    $faq = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($faq) {
-            // Insert into deleted_faqs
-            $deletedBy = $_SESSION['user'] ?? 'admin';
-            $insertStmt = $pdo->prepare("
-                INSERT INTO deleted_faqs (original_id, question, answer, status, topic, attachment, deleted_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ");
-            $insertStmt->execute([
-                $faq['id'],
-                $faq['question'],
-                $faq['answer'],
-                $faq['status'],
-                $faq['topic'],
-                $faq['attachment'] ?? '',
-                $deletedBy
-            ]);
+    if ($faq) {
+        // Insert into deleted_faqs
+        $deletedBy = $_SESSION['user'] ?? 'admin';
+        $insertStmt = $pdo->prepare("
+            INSERT INTO deleted_faqs (original_id, question, answer, status, topic, attachment, deleted_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ");
+        $insertStmt->execute([
+            $faq['id'],
+            $faq['question'],
+            $faq['answer'],
+            $faq['status'],
+            $faq['topic'],
+            $faq['attachment'] ?? '',
+            $deletedBy
+        ]);
 
-            // Delete from faqs
-            $deleteStmt = $pdo->prepare("DELETE FROM faqs WHERE id = ?");
-            $deleteStmt->execute([$id]);
-        }
+        // Delete from faqs
+        $deleteStmt = $pdo->prepare("DELETE FROM faqs WHERE id = ?");
+        $deleteStmt->execute([$id]);
     }
+}
 
 if ($_POST['action'] === 'restore') {
     $id = $_POST['id'];
@@ -342,42 +256,12 @@ if ($_POST['action'] === 'restore') {
 $stmt = $pdo->query("SELECT * FROM faqs ORDER BY id DESC");
 $faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Load all FAQs
-$stmt = $pdo->query("SELECT * FROM faqs ORDER BY id DESC");
-$faqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Load Admin FAQs
-$adminFaqs = $pdo->query("SELECT * FROM admin_faqs ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
-
-// Count user stats
-$totalUsers = count($allUsers);
-$adminCount = 0;
-$userCount = 0;
-
-foreach ($allUsers as $user) {
-    if ($user['role'] === 'admin') {
-        $adminCount++;
-    } else {
-        $userCount++;
-    }
-}
-
-// Count FAQ stats (including Admin FAQs)
-$totalFaqs = count($faqs) + count($adminFaqs);
+// Count stats
+$totalFaqs = count($faqs);
 $resolvedCount = 0;
 $unsolvedCount = 0;
 
-// Count regular FAQs
 foreach ($faqs as $faq) {
-    if ($faq['status'] === 'resolved') {
-        $resolvedCount++;
-    } else {
-        $unsolvedCount++;
-    }
-}
-
-// Count Admin FAQs
-foreach ($adminFaqs as $faq) {
     if ($faq['status'] === 'resolved') {
         $resolvedCount++;
     } else {
@@ -424,9 +308,6 @@ $chartData = [
     'unsolved' => $unsolvedCount,
     'resolvedPercentage' => $resolvedPercentage,
     'unsolvedPercentage' => $unsolvedPercentage,
-    'totalUsers' => $totalUsers,
-    'adminCount' => $adminCount,
-    'userCount' => $userCount,
     'monthly' => array_reverse($monthlyStats)
 ];
 ?>
@@ -476,7 +357,6 @@ $chartData = [
                     <div class="stats-card-content">
                         <h3><?= $totalFaqs ?></h3>
                         <p>Total FAQs</p>
-                        <small>(Regular + Admin)</small>
                     </div>
                 </div>
                 
@@ -509,27 +389,6 @@ $chartData = [
                     <div class="stats-card-content">
                         <h3><?= $resolvedPercentage ?>%</h3>
                         <p>Resolution Rate</p>
-                    </div>
-                </div>
-                
-                <div class="stats-card">
-                    <div class="stats-card-icon users">
-                        <i class="fas fa-users"></i>
-                    </div>
-                    <div class="stats-card-content">
-                        <h3><?= $totalUsers ?></h3>
-                        <p>Total Users</p>
-                        <small>(All Accounts)</small>
-                    </div>
-                </div>
-                
-                <div class="stats-card">
-                    <div class="stats-card-icon admins">
-                        <i class="fas fa-user-shield"></i>
-                    </div>
-                    <div class="stats-card-content">
-                        <h3><?= $adminCount ?></h3>
-                        <p>Admins</p>
                     </div>
                 </div>
             </div>
@@ -719,9 +578,7 @@ $chartData = [
                                                 <i class="fas fa-edit"></i>
                                             </button>
                                             <button type="button" class="action-btn delete" onclick="confirmDelete(<?= $faq['id'] ?>, '<?= htmlspecialchars($faq['question'], ENT_QUOTES) ?>')">
-    <i class="fas fa-trash"></i>
-</button>
-                                                
+                                                <i class="fas fa-trash"></i>
                                             </button>
                                         </div>
                                     </div>
@@ -811,58 +668,21 @@ $chartData = [
             </div>
 
             <!-- Admin-Only FAQs -->
-            <!-- Admin-Only FAQs -->
             <div class="admin-card">
                 <div class="card-header">
-                    <h2 class="card-title">
-                        <i class="fas fa-user-shield"></i> Admin FAQs
-                        <span class="admin-faq-count">(<?= count($adminFaqs) ?> items)</span>
-                    </h2>
-                    <div class="search-wrapper">
-                        <i class="fas fa-search search-icon"></i>
-                        <input type="text" id="adminFaqSearch" class="search-input" placeholder="Search Admin FAQs...">
-                        <select id="adminFaqStatusFilter" class="status-filter-dropdown" onchange="filterAdminFaqs()">
-                            <option value="all">All Status</option>
-                            <option value="resolved">Resolved</option>
-                            <option value="not resolved">Unresolved</option>
-                        </select>
-                        <select id="adminFaqTopicFilter" class="status-filter-dropdown" onchange="filterAdminFaqs()">
-                            <option value="all">All Topics</option>
-                            <option value="Account Issues">Account Issues</option>
-                            <option value="Email Support">Email Support</option>
-                            <option value="Printer & Scanner">Printer & Scanner</option>
-                            <option value="Network & Internet">Network & Internet</option>
-                            <option value="Hardware Problems">Hardware Problems</option>
-                            <option value="Software Installation">Software Installation</option>
-                            <option value="System Access">System Access</option>
-                            <option value="Company Applications">Company Applications</option>
-                            <option value="Password & Login">Password & Login</option>
-                            <option value="Security & Policy">Security & Policy</option>
-                            <option value="Forms & Requests">Forms & Requests</option>
-                            <option value="IT Procedures">IT Procedures</option>
-                            <option value="Remote Access">Remote Access</option>
-                            <option value="Backup & Recovery">Backup & Recovery</option>
-                            <option value="User Guides">User Guides</option>
-                            <option value="Troubleshooting">Troubleshooting</option>
-                            <option value="Device Setup">Device Setup</option>
-                            <option value="File Sharing & Drives">File Sharing & Drives</option>
-                            <option value="IT Announcements">IT Announcements</option>
-                            <option value="Others">Others</option>
-                        </select>
-                    </div>
+                    <h2><i class="fas fa-user-shield"></i> Admin FAQs</h2>
                 </div>
                 <div class="card-content">
-                    <div class="faq-list-container" id="adminFaqList">
-                        <?php
-                        $adminFaqs = $pdo->query("SELECT * FROM admin_faqs ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
-                        if (empty($adminFaqs)): ?>
-                            <div class="empty-state">
-                                <i class="fas fa-inbox"></i>
-                                <h3>No Admin FAQs Yet</h3>
-                            </div>
-                        <?php else: ?>
-                        <?php foreach ($adminFaqs as $index => $faq): ?>
-                <div class="faq-item admin-faq-item" data-index="<?= $index ?>" data-topic="<?= htmlspecialchars($faq['topic']) ?>">
+                <?php
+                $adminFaqs = $pdo->query("SELECT * FROM admin_faqs ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
+                if (empty($adminFaqs)): ?>
+                    <div class="empty-state">
+                        <i class="fas fa-inbox"></i>
+                        <h3>No Admin FAQs Yet</h3>
+                    </div>
+                <?php else: ?>
+                <?php foreach ($adminFaqs as $index => $faq): ?>
+                <div class="faq-item" data-index="<?= $index ?>">
                     <div class="faq-item-header">
                         <span class="faq-number">#<?= $faq['id'] ?></span>
                         <span class="status-badge <?= $faq['status'] === 'resolved' ? 'resolved' : 'unsolved' ?>">
@@ -927,23 +747,12 @@ $chartData = [
                     </select>
                  </div>
 
-                 <?php if (!empty($faq['attachment'])): ?>
-                    <div class="form-group current-attachment-wrapper">
-                        <label class="form-label">Current Attachment:</label>
-                        <div class="attachment-view">
-                            <a href="<?= htmlspecialchars($faq['attachment']) ?>" target="_blank">View Current File</a>
-                            <button type="button" class="close-attachment" onclick="removeAdminAttachment(this)" title="Remove this file">
-                                &times;
-                            </button>
-                        </div>
-                        <input type="hidden" name="remove_existing_attachment" value="0">
+                <?php if (!empty($faq['attachment'])): ?>
+                    <div class="form-group">
+                        <label class="form-label">Attachment:</label>
+                        <p><a href="<?= $faq['attachment'] ?>" target="_blank">View File</a></p>
                     </div>
                 <?php endif; ?>
-
-                <div class="form-group">
-                    <label class="form-label">Attached File:</label>
-                    <input type="file" name="attachment" class="modern-input" <?= $faq['status'] !== 'not resolved' ? 'disabled' : '' ?>>
-                </div>
 
                 <div class="form-actions" style="display: none;">
                     <button type="submit" class="modern-btn success">
@@ -956,10 +765,7 @@ $chartData = [
             </form>
         </div>
     <?php endforeach; ?>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
+    <?php endif; ?>
     </div>
 </div>
 
@@ -1004,11 +810,8 @@ $chartData = [
                             </td>
                             <td>
                                 <input type="hidden" name="update_user_id" value="<?= $user['id'] ?>">
-                                <button type="button" class="modern-btn success" onclick="confirmUpdateUser(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username'], ENT_QUOTES) ?>', this)">
+                                <button type="submit" class="modern-btn success" name="action" value="update_user">
                                     <i class="fas fa-save"></i>
-                                </button>
-                                <button type="button" class="modern-btn danger" onclick="confirmDeleteUser(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username'], ENT_QUOTES) ?>')" style="margin-left: 5px;">
-                                    <i class="fas fa-trash"></i>
                                 </button>
                             </td>
                             
@@ -1287,18 +1090,8 @@ $chartData = [
                                 <i class="fas fa-user-shield"></i>
                             </div>
                             <div class="summary-content">
-                                <h4><?= $adminCount ?></h4>
-                                <p>Total Admins</p>
-                            </div>
-                        </div>
-                        
-                        <div class="summary-item">
-                            <div class="summary-icon users">
-                                <i class="fas fa-users"></i>
-                            </div>
-                            <div class="summary-content">
-                                <h4><?= $totalUsers ?></h4>
-                                <p>Total Users</p>
+                                <h4><?= htmlspecialchars($_SESSION['user']) ?></h4>
+                                <p>Admin User</p>
                             </div>
                         </div>
                     </div>
@@ -1339,150 +1132,7 @@ $chartData = [
         </div>
     </div>
 
-    <!-- Delete User Confirmation Modal -->
-    <div id="deleteUserModal" class="modal">
-        <div class="modal-content delete-modal-content">
-            <div class="modal-header delete-modal-header">
-                <h3>
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <span>Confirm Delete User</span>
-                </h3>
-                <button class="close-modal" onclick="closeDeleteUserModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="delete-warning">
-                    <div class="warning-icon">
-                        <i class="fas fa-user-times"></i>
-                    </div>
-                    <div class="warning-content">
-                        <h4>Are you sure you want to delete this user?</h4>
-                        <p id="delete-user-question-preview">This action cannot be undone.</p>
-                        <div class="warning-note">
-                            <i class="fas fa-info-circle"></i>
-                            <span>This will permanently remove the user from your system.</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="modern-btn secondary" onclick="closeDeleteUserModal()">
-                    <i class="fas fa-times"></i>
-                    <span>Cancel</span>
-                </button>
-                <button class="modern-btn danger" onclick="deleteUser()">
-                    <i class="fas fa-trash"></i>
-                    <span>Delete User</span>
-                </button>
-            </div>
-        </div>
-     </div>
-
-    <!-- Update User Confirmation Modal -->
-    <div id="updateUserModal" class="modal">
-        <div class="modal-content delete-modal-content">
-            <div class="modal-header delete-modal-header">
-                <h3>
-                    <i class="fas fa-save"></i>
-                    <span>Confirm Update User</span>
-                </h3>
-                <button class="close-modal" onclick="closeUpdateUserModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="delete-warning">
-                    <div class="warning-icon">
-                        <i class="fas fa-user-edit"></i>
-                    </div>
-                    <div class="warning-content">
-                        <h4>Are you sure you want to save changes?</h4>
-                        <p id="update-user-preview">This will update the user's information.</p>
-                        <div class="warning-note">
-                            <i class="fas fa-info-circle"></i>
-                            <span>Make sure all information is correct before saving.</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="modern-btn secondary" onclick="closeUpdateUserModal()">
-                    <i class="fas fa-times"></i>
-                    <span>Cancel</span>
-                </button>
-                <button class="modern-btn success" onclick="updateUser()">
-                    <i class="fas fa-save"></i>
-                    <span>Save Changes</span>
-                </button>
-            </div>
-        </div>
-    </div>
     <script>
-
-         let deleteUserId = null;
-        let deleteUserName = '';
-        let updateUserId = null;
-        let updateUserName = '';
-        let updateUserForm = null;
-
-        // User delete confirmation functions
-        function confirmDeleteUser(id, username) {
-            deleteUserId = id;
-            deleteUserName = username;
-            document.getElementById('delete-user-question-preview').innerHTML = `<strong>"${username}"</strong>`;
-            document.getElementById('deleteUserModal').style.display = 'flex';
-            document.body.style.overflow = 'hidden';
-        }
-
-        function deleteUser() {
-            if (deleteUserId) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.innerHTML = `
-                    <input type="hidden" name="action" value="delete_user">
-                    <input type="hidden" name="user_id" value="${deleteUserId}">
-                `;
-                document.body.appendChild(form);
-                form.submit();
-            }
-        }
-
-        function closeDeleteUserModal() {
-            document.getElementById('deleteUserModal').style.display = 'none';
-            document.body.style.overflow = 'auto';
-            deleteUserId = null;
-            deleteUserName = '';
-        }
-
-        // Update user confirmation functions
-        function confirmUpdateUser(id, username, buttonElement) {
-            updateUserId = id;
-            updateUserName = username;
-            updateUserForm = buttonElement.closest('form');
-            document.getElementById('update-user-preview').innerHTML = `<strong>"${username}"</strong>`;
-            document.getElementById('updateUserModal').style.display = 'flex';
-            document.body.style.overflow = 'hidden';
-        }
-
-        function updateUser() {
-            if (updateUserForm) {
-                // Add the action field
-                const actionInput = document.createElement('input');
-                actionInput.type = 'hidden';
-                actionInput.name = 'action';
-                actionInput.value = 'update_user';
-                updateUserForm.appendChild(actionInput);
-                
-                // Submit the form
-                updateUserForm.submit();
-            }
-        }
-
-        function closeUpdateUserModal() {
-            document.getElementById('updateUserModal').style.display = 'none';
-            document.body.style.overflow = 'auto';
-            updateUserId = null;
-            updateUserName = '';
-            updateUserForm = null;
-        }
-
         // PHP data for JavaScript
         const chartData = <?= json_encode($chartData) ?>;
         
@@ -1549,38 +1199,6 @@ $chartData = [
             });
         }
 
-        // Filter Admin FAQs
-        function filterAdminFaqs() {
-            const query = document.getElementById('adminFaqSearch').value.toLowerCase();
-            const selectedStatus = document.getElementById('adminFaqStatusFilter')?.value || 'all';
-            const selectedTopic = document.getElementById('adminFaqTopicFilter')?.value || 'all';
-            const faqs = document.querySelectorAll('.admin-faq-item');
-            let visibleCount = 0;
-
-            faqs.forEach(faq => {
-                const question = faq.querySelector('input[name="question"]').value.toLowerCase();
-                const answer = faq.querySelector('textarea[name="answer"]').value.toLowerCase();
-                const status = faq.querySelector('select[name="status"]').value;
-                const topic = faq.getAttribute('data-topic') || '';
-                
-                const matchesQuery = question.includes(query) || answer.includes(query);
-                const matchesStatus = (selectedStatus === 'all' || status === selectedStatus);
-                const matchesTopic = (selectedTopic === 'all' || topic === selectedTopic);
-
-                if (matchesQuery && matchesStatus && matchesTopic) {
-                    faq.style.display = 'block';
-                    visibleCount++;
-                } else {
-                    faq.style.display = 'none';
-                }
-            });
-
-            const countElement = document.querySelector('.admin-faq-count');
-            if (countElement) {
-                countElement.textContent = `(${visibleCount} items)`;
-            }
-        }
-
         // NEW: View deleted FAQ details
         function viewDeletedFaq(question, answer) {
             document.getElementById('viewDeletedQuestion').textContent = question;
@@ -1614,23 +1232,10 @@ $chartData = [
             }, 300);
         });
 
-
-         // Admin FAQs search listener
-        document.getElementById('adminFaqSearch').addEventListener('input', () => {
-            filterAdminFaqs();
-            const searchIcon = document.querySelector('.search-icon');
-            searchIcon.classList.add('fa-spin');
-            setTimeout(() => {
-                searchIcon.classList.remove('fa-spin');
-            }, 300);
-        });
-
         // Dropdown filter listeners
         document.getElementById('adminStatusFilter').addEventListener('change', filterFaqs);
         document.getElementById('deletedStatusFilter').addEventListener('change', filterDeletedFaqs);
         document.getElementById('deletedTopicFilter').addEventListener('change', filterDeletedFaqs);
-        document.getElementById('adminFaqStatusFilter').addEventListener('change', filterAdminFaqs);
-        document.getElementById('adminFaqTopicFilter').addEventListener('change', filterAdminFaqs);
 
         // Edit mode functions
         function toggleEdit(index) {
@@ -1878,13 +1483,9 @@ $chartData = [
             const deleteModal = document.getElementById('deleteModal');
             const statsModal = document.getElementById('statsModal');
             const viewDeletedModal = document.getElementById('viewDeletedModal');
-            const deleteUserModal = document.getElementById('deleteUserModal');
-            const updateUserModal = document.getElementById('updateUserModal');
             if (e.target === deleteModal) closeDeleteModal();
             if (e.target === statsModal) closeStatsModal();
             if (e.target === viewDeletedModal) closeViewDeletedModal();
-            if (e.target === deleteUserModal) closeDeleteUserModal();
-            if (e.target === updateUserModal) closeUpdateUserModal();
         });
 
         // Close modals with Escape
@@ -1893,8 +1494,6 @@ $chartData = [
                 closeDeleteModal();
                 closeStatsModal();
                 closeViewDeletedModal();
-                closeDeleteUserModal();
-                closeUpdateUserModal();
             }
         });
 
@@ -1924,15 +1523,11 @@ function removeAttachment(btn) {
     const fileInput = wrapper.parentElement.querySelector('input[type="file"]');
     const hiddenInput = wrapper.querySelector('input[name="remove_existing_attachment"]');
 
-    // Mark that the current attachment should be removed BEFORE removing the wrapper
-    if (hiddenInput) {
-        hiddenInput.value = "1";
-        // Move the hidden input outside the wrapper so it doesn't get removed
-        wrapper.parentElement.appendChild(hiddenInput);
-    }
-
     // Remove the current display
     wrapper.remove();
+
+    // Mark that the current attachment should be removed
+    if (hiddenInput) hiddenInput.value = "1";
 
     // Enable the file input
     if (fileInput) {
@@ -1977,28 +1572,6 @@ function confirmDeleteAdminFaq(id, question) {
         `;
         document.body.appendChild(form);
         form.submit();
-    }
-}
-
-function removeAdminAttachment(btn) {
-    const wrapper = btn.closest('.current-attachment-wrapper');
-    const fileInput = wrapper.parentElement.querySelector('input[type="file"]');
-    const hiddenInput = wrapper.querySelector('input[name="remove_existing_attachment"]');
-
-    // Mark that the current attachment should be removed BEFORE removing the wrapper
-    if (hiddenInput) {
-        hiddenInput.value = "1";
-        // Move the hidden input outside the wrapper so it doesn't get removed
-        wrapper.parentElement.appendChild(hiddenInput);
-    }
-
-    // Remove the current display
-    wrapper.remove();
-
-    // Enable the file input
-    if (fileInput) {
-        fileInput.disabled = false;
-        fileInput.style.display = "block";
     }
 }
 
