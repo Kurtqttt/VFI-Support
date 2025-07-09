@@ -24,13 +24,23 @@ header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Cache-Control: post-check=0, pre-check=0", false);
 header("Pragma: no-cache");
 
-// Enhanced session check
 if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'admin') {
-    session_unset();
-    session_destroy();
     header("Location: index.php");
     exit;
 }
+
+// Set user_id if not already set (needed for notifications)
+if (!isset($_SESSION['user_id'])) {
+    $userStmt = $pdo->prepare("SELECT id FROM users WHERE username = ?");
+    $userStmt->execute([$_SESSION['user']]);
+    $userData = $userStmt->fetch(PDO::FETCH_ASSOC);
+    if ($userData) {
+        $_SESSION['user_id'] = $userData['id'];
+    }
+}
+
+// Include notification functions
+require_once 'includes/notifications.php';
 
 // Fetch all users (only once)
 $userStmt = $pdo->query("SELECT * FROM users");
@@ -220,11 +230,11 @@ $attachment = json_encode($filenames); // Store in DB as JSON$filename = $target
 
     $stmt->execute([$q, $a, $status, $topic, $filename]);
 
-    // ADMIN NOTIFICATION (KEEP ONLY THIS ONE)
+    // Create notifications
     $audienceText = ($audience === 'admin') ? 'Admin FAQ' : 'User FAQ';
     $notificationTitle = "New FAQ Added";
     $notificationMessage = "Topic: {$topic} | Type: {$audienceText} | Status: " . ucfirst($status);
-    createNotification($pdo, 'admin', NotificationType::FAQ_ADDED, $notificationTitle, $notificationMessage);
+    createNotification($pdo, 'admin', 'faq_added', $notificationTitle, $notificationMessage);
     
     // USER NOTIFICATION (only for user FAQs)
     if ($audience === 'user') {
@@ -2098,12 +2108,7 @@ function closeViewDeletedAdminModal() {
     history.pushState(null, "", location.href);
 };
 </script>
-<script>
-    history.pushState(null, "", location.href);
-    window.onpopstate = function () {
-    history.pushState(null, "", location.href);
- };
-</script>
+
 <script>
 // Session Keep-Alive System
 let sessionTimer;
@@ -2160,6 +2165,189 @@ document.addEventListener('visibilitychange', function() {
     if (!document.hidden) {
         refreshSession();
     }
+});
+</script>
+
+<script>
+// Notification System
+class NotificationManager {
+    constructor() {
+        this.isOpen = false;
+        this.pollInterval = 5000; // 5 seconds
+        this.init();
+    }
+    
+    init() {
+        this.bindEvents();
+        this.startPolling();
+        this.loadNotifications();
+    }
+    
+    bindEvents() {
+        const bell = document.getElementById('notificationBell');
+        const dropdown = document.getElementById('notificationDropdown');
+        
+        if (!bell) return; // Exit if elements don't exist
+        
+        // Toggle dropdown
+        bell.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleDropdown();
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!bell.contains(e.target)) {
+                this.closeDropdown();
+            }
+        });
+    }
+    
+    toggleDropdown() {
+        const dropdown = document.getElementById('notificationDropdown');
+        if (!dropdown) return;
+        
+        this.isOpen = !this.isOpen;
+        
+        if (this.isOpen) {
+            dropdown.classList.add('show');
+            this.loadNotifications();
+        } else {
+            dropdown.classList.remove('show');
+        }
+    }
+    
+    closeDropdown() {
+        const dropdown = document.getElementById('notificationDropdown');
+        if (!dropdown) return;
+        
+        dropdown.classList.remove('show');
+        this.isOpen = false;
+    }
+    
+    async loadNotifications() {
+        try {
+            const response = await fetch('notifications.php?action=get');
+            const data = await response.json();
+            
+            if (data.notifications) {
+                this.renderNotifications(data.notifications);
+            }
+        } catch (error) {
+            console.error('Error loading notifications:', error);
+        }
+    }
+    
+    async updateBadge() {
+        try {
+            const response = await fetch('notifications.php?action=count');
+            const data = await response.json();
+            
+            const badge = document.getElementById('notificationBadge');
+            if (!badge) return;
+            
+            if (data.count > 0) {
+                badge.textContent = data.count;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error updating badge:', error);
+        }
+    }
+    
+    renderNotifications(notifications) {
+        const list = document.getElementById('notificationList');
+        if (!list) return;
+        
+        if (notifications.length === 0) {
+            list.innerHTML = `
+                <div class="notification-empty">
+                    <i class="fas fa-bell-slash"></i>
+                    <p>No new notifications</p>
+                </div>
+            `;
+            return;
+        }
+        
+        list.innerHTML = notifications.map(notification => `
+            <div class="notification-item unread" onclick="markAsRead(${notification.id})">
+                <div class="notification-content">
+                    <div class="notification-icon ${notification.type}">
+                        <i class="fas ${this.getIcon(notification.type)}"></i>
+                    </div>
+                    <div class="notification-text">
+                        <div class="notification-title">${notification.title}</div>
+                        <div class="notification-message">${notification.message}</div>
+                        <div class="notification-time">${notification.time_ago}</div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    getIcon(type) {
+        const icons = {
+            'faq_added': 'fa-plus',
+            'faq_updated': 'fa-edit',
+            'faq_deleted': 'fa-trash',
+            'faq_restored': 'fa-undo',
+            'user_created': 'fa-user-plus',
+            'user_deleted': 'fa-user-minus',
+            'user_updated': 'fa-user-edit',
+            'system_alert': 'fa-exclamation-triangle'
+        };
+        return icons[type] || 'fa-info';
+    }
+    
+    startPolling() {
+        setInterval(() => {
+            this.updateBadge();
+            if (this.isOpen) {
+                this.loadNotifications();
+            }
+        }, this.pollInterval);
+    }
+}
+
+// Mark notification as read
+async function markAsRead(id) {
+    try {
+        await fetch('notifications.php?action=mark_read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `id=${id}`
+        });
+        
+        if (window.notificationManager) {
+            notificationManager.loadNotifications();
+            notificationManager.updateBadge();
+        }
+    } catch (error) {
+        console.error('Error marking as read:', error);
+    }
+}
+
+// Mark all notifications as read
+async function markAllAsRead() {
+    try {
+        await fetch('notifications.php?action=mark_all_read', {
+            method: 'POST'
+        });
+        
+        if (window.notificationManager) {
+            notificationManager.loadNotifications();
+            notificationManager.updateBadge();
+        }
+    } catch (error) {
+        console.error('Error marking all as read:', error);
+    }
+}
+
+// Initialize notification manager when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    window.notificationManager = new NotificationManager();
 });
 </script>
 

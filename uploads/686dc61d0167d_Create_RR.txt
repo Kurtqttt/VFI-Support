@@ -1,0 +1,24 @@
+How to create RR?
+
+FIRST OPEN EXACT (MUST BE IN THE DATABASE AND MUST HAVE AN ACCOUNT) or login your credentials.
+
+- ASK OR YOU MUST HAVE A PO number "Purchase Order" press Enter then click Refresh the page.
+
+- Input the in the "Your ref." your SI number (Service Invoice), after inputting press Enter.
+  ex. SI# 0003
+
+- Next, it will be the "Actuals" field, this is the qty and units field, after inputting press Enter.
+  ex. 1.000
+
+- Third, after pressing Enter you will be headed into "Serial/batch numbers" and you will be asked about "Serial/batch numbers" and press Enter.
+  ex. L116998150
+
+- Finally, press "Process" at the buttom of the page it will save the inputted fields as well as it will head to printing side and will print the document.
+
+
+Have it signed with the IT Manager, please also print the SI and PO documents and staple it as reference alongside with the printed RR.
+
+
+Regards,
+Kurt
+

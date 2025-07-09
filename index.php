@@ -8,6 +8,11 @@ header("Expires: 0");
 
 $error = '';
 
+// Show timeout message sent from admin.php / user.php
+if (isset($_GET['timeout'])) {
+    $error = 'Your session has expired. Please log-in again.';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = $_POST['username'];
     $password = $_POST['password']; 

@@ -664,6 +664,46 @@ async function markAllAsRead() {
 // Initialize user notification manager
 document.addEventListener('DOMContentLoaded', function() {
     window.userNotificationManager = new UserNotificationManager();
+
+class UserNotificationManager {
+    constructor() {
+        this.badge = document.getElementById('notificationBadge');
+        this.container = document.getElementById('notificationList');
+        this.init();
+    }
+
+    init() {
+        this.fetchNotifications();
+        this.interval = setInterval(() => this.fetchNotifications(), 10000);
+    }
+
+    fetchNotifications() {
+        fetch('notifications.php?action=get')
+            .then(res => res.json())
+            .then(data => {
+                this.container.innerHTML = '';
+                if (data.length > 0) {
+                    this.badge.textContent = data.length;
+                    this.badge.style.display = 'inline-block';
+                    data.forEach(notification => {
+                        const div = document.createElement('div');
+                        div.classList.add('notification-item');
+                        div.innerHTML = `<strong>${notification.title}</strong><br>${notification.message}`;
+                        this.container.appendChild(div);
+                    });
+                } else {
+                    this.badge.style.display = 'none';
+                    this.container.innerHTML = `<p class="empty">No notifications.</p>`;
+                }
+            });
+    }
+
+    markAllAsRead() {
+        fetch('notifications.php?action=read', { method: 'POST' })
+            .then(() => this.fetchNotifications());
+    }
+}
+
 });
 </script>
 </body>
