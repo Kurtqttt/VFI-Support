@@ -1,19 +1,22 @@
 <?php
-require_once 'includes/db.php';
-session_start();
+// Session configuration for longer sessions (MUST BE BEFORE session_start())
+ini_set('session.gc_maxlifetime', 7200); // 2 hours
+ini_set('session.cookie_lifetime', 7200); // 2 hours
+ini_set('session.gc_probability', 1);
+ini_set('session.gc_divisor', 1000);
 
-// Add session activity tracking and timeout checking
-if (!isset($_SESSION['last_activity'])) {
-    $_SESSION['last_activity'] = time();
-} else {
-    // Check if session has expired (8 hours = 28800 seconds)
-    if (time() - $_SESSION['last_activity'] > 28800) {
-        session_unset();
-        session_destroy();
-        header("Location: index.php?timeout=1");
-        exit;
-    }
-}
+// Set secure session parameters
+session_set_cookie_params([
+    'lifetime' => 7200, // 2 hours
+    'path' => '/',
+    'domain' => '',
+    'secure' => false, // Set to true if using HTTPS
+    'httponly' => true,
+    'samesite' => 'Lax'
+]);
+
+session_start();
+require_once 'includes/db.php';
 
 // Update last activity time on every page load
 $_SESSION['last_activity'] = time();
@@ -439,6 +442,7 @@ document.addEventListener('visibilitychange', function() {
 
 <script>
 // User Notification System
+// User Notification System
 class UserNotificationManager {
     constructor() {
         this.isOpen = false;
@@ -664,46 +668,6 @@ async function markAllAsRead() {
 // Initialize user notification manager
 document.addEventListener('DOMContentLoaded', function() {
     window.userNotificationManager = new UserNotificationManager();
-
-class UserNotificationManager {
-    constructor() {
-        this.badge = document.getElementById('notificationBadge');
-        this.container = document.getElementById('notificationList');
-        this.init();
-    }
-
-    init() {
-        this.fetchNotifications();
-        this.interval = setInterval(() => this.fetchNotifications(), 10000);
-    }
-
-    fetchNotifications() {
-        fetch('notifications.php?action=get')
-            .then(res => res.json())
-            .then(data => {
-                this.container.innerHTML = '';
-                if (data.length > 0) {
-                    this.badge.textContent = data.length;
-                    this.badge.style.display = 'inline-block';
-                    data.forEach(notification => {
-                        const div = document.createElement('div');
-                        div.classList.add('notification-item');
-                        div.innerHTML = `<strong>${notification.title}</strong><br>${notification.message}`;
-                        this.container.appendChild(div);
-                    });
-                } else {
-                    this.badge.style.display = 'none';
-                    this.container.innerHTML = `<p class="empty">No notifications.</p>`;
-                }
-            });
-    }
-
-    markAllAsRead() {
-        fetch('notifications.php?action=read', { method: 'POST' })
-            .then(() => this.fetchNotifications());
-    }
-}
-
 });
 </script>
 </body>

@@ -1,19 +1,22 @@
 <?php
-require 'includes/db.php';
-session_start();
+// Session configuration for longer sessions (MUST BE BEFORE session_start())
+ini_set('session.gc_maxlifetime', 7200); // 2 hours
+ini_set('session.cookie_lifetime', 7200); // 2 hours
+ini_set('session.gc_probability', 1);
+ini_set('session.gc_divisor', 1000);
 
-// Add session activity tracking and timeout checking
-if (!isset($_SESSION['last_activity'])) {
-    $_SESSION['last_activity'] = time();
-} else {
-    // Check if session has expired (8 hours = 28800 seconds)
-    if (time() - $_SESSION['last_activity'] > 28800) {
-        session_unset();
-        session_destroy();
-        header("Location: index.php?timeout=1");
-        exit;
-    }
-}
+// Set secure session parameters
+session_set_cookie_params([
+    'lifetime' => 7200, // 2 hours
+    'path' => '/',
+    'domain' => '',
+    'secure' => false, // Set to true if using HTTPS
+    'httponly' => true,
+    'samesite' => 'Lax'
+]);
+
+session_start();
+require_once 'includes/db.php';
 
 // Update last activity time on every page load
 $_SESSION['last_activity'] = time();
@@ -230,11 +233,11 @@ $attachment = json_encode($filenames); // Store in DB as JSON$filename = $target
 
     $stmt->execute([$q, $a, $status, $topic, $filename]);
 
-    // Create notifications
+    // ADMIN NOTIFICATION
     $audienceText = ($audience === 'admin') ? 'Admin FAQ' : 'User FAQ';
     $notificationTitle = "New FAQ Added";
     $notificationMessage = "Topic: {$topic} | Type: {$audienceText} | Status: " . ucfirst($status);
-    createNotification($pdo, 'admin', 'faq_added', $notificationTitle, $notificationMessage);
+    createNotification($pdo, 'admin', NotificationType::FAQ_ADDED, $notificationTitle, $notificationMessage);
     
     // USER NOTIFICATION (only for user FAQs)
     if ($audience === 'user') {

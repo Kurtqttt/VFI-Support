@@ -52,3 +52,4 @@ function createSystemAnnouncement($pdo, $title, $message) {
 function createHelpfulTip($pdo, $title, $message) {
     createNotification($pdo, 'user', UserNotificationType::HELPFUL_TIP, $title, $message);
 }
+?>
