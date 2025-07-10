@@ -1,6 +1,22 @@
 <?php
-require 'includes/db.php';
+// Session configuration for longer sessions (MUST BE BEFORE session_start())
+ini_set('session.gc_maxlifetime', 7200); // 2 hours
+ini_set('session.cookie_lifetime', 7200); // 2 hours
+ini_set('session.gc_probability', 1);
+ini_set('session.gc_divisor', 1000);
+
+// Set secure session parameters
+session_set_cookie_params([
+    'lifetime' => 7200, // 2 hours
+    'path' => '/',
+    'domain' => '',
+    'secure' => false, // Set to true if using HTTPS
+    'httponly' => true,
+    'samesite' => 'Lax'
+]);
+
 session_start();
+require 'includes/db.php';
 
 // Add session activity tracking and timeout checking
 if (!isset($_SESSION['last_activity'])) {
