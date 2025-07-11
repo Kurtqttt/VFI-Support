@@ -1537,6 +1537,10 @@ $chartData = [
 
         function updateUser() {
             if (updateUserForm) {
+                // Close the modal before submitting
+                document.getElementById('updateUserModal').style.display = 'none';
+                document.body.style.overflow = 'auto';
+                
                 // Add the action field
                 const actionInput = document.createElement('input');
                 actionInput.type = 'hidden';
