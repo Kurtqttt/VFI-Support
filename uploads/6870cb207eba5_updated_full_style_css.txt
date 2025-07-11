@@ -6,9 +6,9 @@
   --primary-200: #fecaca;
   --primary-300: #fca5a5;
   --primary-400: #f87171;
-  --primary-500: #dc2626;
-  --primary-600: #b91c1c;
-  --primary-700: #991b1b;
+  --primary-500: #b22222;
+  --primary-600: #8b0000;
+  --primary-700: #660000;
   --primary-800: #7f1d1d;
   --primary-900: #450a0a;
 
@@ -28,7 +28,7 @@
   --black-50: #1a1a1a;
   --black-100: #0f0f0f;
   --black-200: #050505;
-  --black-300: #000000;
+  --black-300: #0a0a0a;
   --gray-50: #2d2d2d;
   --gray-100: #262626;
   --gray-200: #1f1f1f;
@@ -41,8 +41,8 @@
   --gray-900: #000000;
 
   /* Light/White Colors (10% of design) */
-  --white-50: #ffffff;
-  --white-100: #fafafa;
+  --white-50: #ffffcc;
+  --white-100: #f8f8d8;
   --white-200: #f5f5f5;
   --white-300: #f0f0f0;
   --white-400: #e5e5e5;
@@ -115,7 +115,7 @@ body {
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   line-height: 1.6;
   color: var(--white-100);
-  background: linear-gradient(135deg, #dc2626 0%, #7f1d1d 25%, #450a0a 50%, #1a0a0a 75%, #000000 100%);
+  background: linear-gradient(135deg, #0a0a0a 0%, #7f1d1d 25%, #450a0a 50%, #1a0a0a 75%, #000000 100%);
   min-height: 100vh;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
@@ -418,7 +418,6 @@ body {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
-  background: var(--gray-50);
 }
 
 .notification-header {
@@ -458,15 +457,7 @@ body {
 .notification-list {
   max-height: 400px;
   overflow-y: auto;
-  background: var(--gray-50);
 }
-
-.notification-list {
-  max-height: 400px;
-  overflow-y: auto;
-  background: var(--gray-50);
-}
-
 
 .notification-item {
   padding: var(--space-4);
@@ -907,6 +898,7 @@ body {
 .form-input,
 .form-textarea,
 .form-select {
+  max-width: 900px;
   background: rgba(147, 17, 17, 0.1);
   border: 1px solid rgba(220, 38, 38, 0.2);
   border-radius: var(--radius-lg);
@@ -1106,13 +1098,13 @@ body {
 }
 
 .btn-success {
-  background: rgb(16, 16, 15);
-  color: var(--red-50);
+  background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+  color: var(--white-50);
   border: 1px solid var(--primary-600);
 }
 
 .btn-success:hover {
-  background: linear-gradient(135deg, var(--primary-800), var(--primary-700));
+  background: linear-gradient(135deg, var(--primary-600), var(--primary-700));
   transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
 }
@@ -1144,8 +1136,8 @@ body {
 }
 
 .faq-card {
-  background: rgba(34, 11, 11, 0.1);
-  border: 1px solid rgba(215, 237, 25, 0.2);
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.2);
   border-radius: var(--radius-xl);
   overflow: hidden;
   transition: var(--transition-normal);
@@ -1754,7 +1746,7 @@ body {
 
 /* ===== USER INTERFACE STYLES ===== */
 .index-body {
-  background: linear-gradient(135deg, #5b0606 0%, #7f1d1d 100%);
+  background: linear-gradient(135deg, #0a0a0a 0%, #7f1d1d 100%);
   min-height: 100vh;
   font-family: "Inter", sans-serif;
 }
@@ -1879,7 +1871,7 @@ body {
 
 /* ===== SEARCH CARD STYLES ===== */
 .search-card {
-  background: rgba(94, 9, 9, 0.1);
+  background: rgba(220, 38, 38, 0.1);
   backdrop-filter: blur(20px);
   border: 1px solid rgba(220, 38, 38, 0.2);
   border-radius: var(--radius-2xl);
@@ -2556,7 +2548,7 @@ button:focus,
   padding: 0;
   min-height: 100vh;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(135deg, #dc2626 0%, #000000 100%);
+  background: linear-gradient(135deg, #0a0a0a 0%, #000000 100%);
   display: flex;
   align-items: center;
   justify-content: center;
