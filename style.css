@@ -898,7 +898,7 @@ body {
 .form-input,
 .form-textarea,
 .form-select {
-  background: rgba(220, 38, 38, 0.1);
+  background: rgba(147, 17, 17, 0.1);
   border: 1px solid rgba(220, 38, 38, 0.2);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
@@ -1135,8 +1135,8 @@ body {
 }
 
 .faq-card {
-  background: rgba(220, 38, 38, 0.1);
-  border: 1px solid rgba(220, 38, 38, 0.2);
+  background: rgba(34, 11, 11, 0.1);
+  border: 1px solid rgba(215, 237, 25, 0.2);
   border-radius: var(--radius-xl);
   overflow: hidden;
   transition: var(--transition-normal);
@@ -1745,7 +1745,7 @@ body {
 
 /* ===== USER INTERFACE STYLES ===== */
 .index-body {
-  background: linear-gradient(135deg, #dc2626 0%, #7f1d1d 100%);
+  background: linear-gradient(135deg, #5b0606 0%, #7f1d1d 100%);
   min-height: 100vh;
   font-family: "Inter", sans-serif;
 }
