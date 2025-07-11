@@ -906,7 +906,10 @@ body {
   font-size: 0.875rem;
   transition: var(--transition-normal);
   backdrop-filter: blur(10px);
+  max-width: 900px;
+   width: 100%; /* makes them wider than parent */
 }
+
 
 .form-input::placeholder,
 .form-textarea::placeholder {
@@ -2536,4 +2539,50 @@ button:focus,
     --gray-800: #f9fafb;
     --gray-900: #ffffff;
   }
+}
+
+/* ===== LOGIN STYLES ===== */
+.login-body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #dc2626 0%, #000000 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 1rem;
+}
+.login-container {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 3rem;
+    border-radius: 1.5rem;
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(220, 38, 38, 0.2);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    width: 100%;
+    max-width: 450px;
+    z-index: 10;
+    text-align: center;
+}
+
+.input-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.input-wrapper .form-input[type="password"] {
+    padding-right: 3.5rem; /* Make space for the toggle icon */
+}
+
+.toggle-password {
+    position: absolute;
+    top: 50%;
+    right: 1rem;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
 }

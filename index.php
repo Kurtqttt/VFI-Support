@@ -44,64 +44,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login</title>
+    <title>VFI-Support Login</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="login-body">
-    <div class="login-background">
-        <div class="login-container">
-            <div class="login-header">
-                <div class="login-icon">
-                    <i class="fas fa-shield-alt"></i>
+    <div class="bg-animation">
+        <div class="floating-orb orb-1"></div>
+        <div class="floating-orb orb-2"></div>
+        <div class="floating-orb orb-3"></div>
+        <div class="floating-orb orb-4"></div>
+        <div class="floating-orb orb-5"></div>
+    </div>
+    <div class="login-container">
+        <div class="login-header">
+            <div class="login-icon">
+                <i class="fas fa-shield-alt"></i>
+            </div>
+            <h1 class="login-title">Welcome to VFI-Support!</h1>
+            <p class="login-subtitle">Please sign in to your account</p>
+        </div>
+
+        <?php if (!empty($error)): ?>
+            <div class="error-message">
+                <i class="fas fa-exclamation-circle"></i>
+                <span><?php echo htmlspecialchars($error); ?></span>
+            </div>
+        <?php endif; ?>
+
+        <form method="post" class="modern-form">
+            <div class="form-group">
+                <label for="username" class="form-label"><i class="fas fa-user"></i> Username</label>
+                <div class="input-wrapper">
+                    <input type="text" id="username" name="username" placeholder="Enter your username" required class="form-input">
                 </div>
-                <h1 class="login-title">Welcome to VFI-Support!</h1>
-                <p class="login-subtitle">Please sign in to your account</p>
             </div>
 
-            <?php if (!empty($error)): ?>
-                <div class="error-message">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <span><?php echo htmlspecialchars($error); ?></span>
+            <div class="form-group">
+                <label for="password" class="form-label"><i class="fas fa-lock"></i> Password</label>
+                <div class="input-wrapper">
+                    <input type="password" id="password" name="password" placeholder="Enter your password" required class="form-input">
+                    <button type="button" class="toggle-password" onclick="togglePassword()">
+                        <i class="fas fa-eye" id="toggleIcon"></i>
+                    </button>
                 </div>
-            <?php endif; ?>
+            </div>
 
-            <form method="post" class="login-form">
-                <div class="input-group">
-                    <div class="input-wrapper">
-                        <i class="fas fa-user input-icon"></i>
-                        <input type="text" name="username" placeholder="Username" required class="login-input">
-                    </div>
-                </div>
-
-                <div class="input-group">
-                    <div class="input-wrapper">
-                        <i class="fas fa-lock input-icon"></i>
-                        <input type="password" name="password" placeholder="Password" required class="login-input" id="password">
-                        <button type="button" class="toggle-password" onclick="togglePassword()">
-                            <i class="fas fa-eye" id="toggleIcon"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <button type="submit" class="login-btn">
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-sign-in-alt"></i>
                     <span>Sign In</span>
-                    <i class="fas fa-arrow-right"></i>
                 </button>
-            </form>
-        </div>
-
-        <img src="images/hotdog.png" alt="Hotdog" id="hotdog-float">
-        <img src="images/popperz.png" alt="Hotdog" class="hotdog-float hotdog-right">
-
-        <!-- Animated background elements -->
-        <div class="bg-animation">
-            <div class="floating-shape shape-1"></div>
-            <div class="floating-shape shape-2"></div>
-            <div class="floating-shape shape-3"></div>
-            <div class="floating-shape shape-4"></div>
-        </div>
+            </div>
+        </form>
     </div>
+
+    <img src="images/hotdog.png" alt="Hotdog" id="hotdog-float">
+    <img src="images/popperz.png" alt="Popperz" class="hotdog-float hotdog-right">
 
     <script>
         function togglePassword() {
@@ -119,23 +118,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Add loading animation on form submit
-        document.querySelector('.login-form').addEventListener('submit', function(e) {
-            const submitBtn = document.querySelector('.login-btn');
+        document.querySelector('.modern-form').addEventListener('submit', function(e) {
+            const submitBtn = document.querySelector('.btn-primary');
             submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Signing In...</span>';
             submitBtn.disabled = true;
-        });
-
-        // Add focus animations
-        document.querySelectorAll('.login-input').forEach(input => {
-            input.addEventListener('focus', function() {
-                this.parentElement.classList.add('focused');
-            });
-            
-            input.addEventListener('blur', function() {
-                if (this.value === '') {
-                    this.parentElement.classList.remove('focused');
-                }
-            });
         });
     </script>
